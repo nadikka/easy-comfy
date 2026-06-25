@@ -1,0 +1,35 @@
+{
+  "1": {
+    "inputs": {
+      "image": "example.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {"title": "Load Image (referencia)"}
+  },
+  "2": {
+    "inputs": {
+      "image": ["1", 0],
+      "upscale_method": "nearest-exact",
+      "scale_by": 1.0
+    },
+    "class_type": "ImageScaleBy",
+    "_meta": {"title": "Image Scale By (escala/desescala ref)"}
+  },
+  "3": {
+    "inputs": {
+      "image": ["2", 0],
+      "preprocessor": "CannyEdgePreprocessor",
+      "resolution": 512
+    },
+    "class_type": "AIO_Preprocessor",
+    "_meta": {"title": "AIO Aux Preprocessor"}
+  },
+  "4": {
+    "inputs": {
+      "filename_prefix": "preprocess_preview",
+      "images": ["3", 0]
+    },
+    "class_type": "SaveImage",
+    "_meta": {"title": "Save Image (preview preprocesado)"}
+  }
+}

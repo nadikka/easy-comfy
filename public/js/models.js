@@ -91,7 +91,7 @@ async function loadDiploModels(forceReload = false) {
             const list = data.options[key];
             if (!sel || !Array.isArray(list) || list.length === 0) return;
 
-            const current = sel.value; // valor por defecto actual
+            const current = sel.value; // valor por defecto actual (puede no existir en este backend)
             sel.innerHTML = '';
             list.forEach(name => {
                 const opt = document.createElement('option');
@@ -99,15 +99,10 @@ async function loadDiploModels(forceReload = false) {
                 opt.textContent = name;
                 sel.appendChild(opt);
             });
-            // Si el default no está en la lista (ej: nombre con doble extensión),
-            // lo agregamos igual para no perderlo.
-            if (!list.includes(current) && current) {
-                const opt = document.createElement('option');
-                opt.value = current;
-                opt.textContent = current + ' (default, no listado)';
-                sel.insertBefore(opt, sel.firstChild);
-            }
-            sel.value = current;
+            // Si el default actual existe en el backend, lo mantenemos. Si NO existe
+            // (p.ej. otro Colab con nombres distintos), seleccionamos el 1er modelo
+            // disponible para que la generación use uno válido sin intervención manual.
+            sel.value = list.includes(current) ? current : list[0];
             totalLoaded += list.length;
         });
 
@@ -118,11 +113,39 @@ async function loadDiploModels(forceReload = false) {
     }
 }
 
+// Llena el dropdown de preprocesadores del AIO_Preprocessor con la lista real del backend
+let preprocessorsLoaded = false;
+async function loadPreprocessors(forceReload = false) {
+    if (preprocessorsLoaded && !forceReload) return;
+    const sel = document.getElementById('preprocessor');
+    if (!sel) return;
+    try {
+        const r = await fetch(apiUrl('/api/preprocessors'));
+        const d = await r.json();
+        if (!d.success || !Array.isArray(d.preprocessors) || d.preprocessors.length === 0) return;
+        const current = sel.value;
+        sel.innerHTML = '';
+        d.preprocessors.forEach(name => {
+            if (name === 'none') return; // 'none' no preprocesa nada
+            const opt = document.createElement('option');
+            opt.value = name;
+            opt.textContent = name;
+            sel.appendChild(opt);
+        });
+        if (d.preprocessors.includes(current)) sel.value = current;
+        preprocessorsLoaded = true;
+        Logger.info(`✓ ${d.preprocessors.length} preprocesadores cargados`);
+    } catch (e) {
+        Logger.warning('No se pudieron cargar preprocesadores: ' + e.message);
+    }
+}
+
 // Resetear también los modelos DIPLO cuando cambia la conexión
 const _origResetModels = resetModels;
 resetModels = function() {
     _origResetModels();
     diploModelsLoaded = false;
+    preprocessorsLoaded = false;
 };
 
 // Función para randomizar la semilla

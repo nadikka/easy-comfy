@@ -231,7 +231,7 @@ const PUBLIC_URL = process.env.PUBLIC_URL || '';
 const IMAGE_BASE_URL = process.env.IMAGE_BASE_URL || 'https://vps-4455523-x.dattaweb.com/comfyweb';
 
 app.use(BASE_PATH, express.static(path.join(__dirname, 'public')));
-app.use(bodyParser.json());
+app.use(bodyParser.json({ limit: '30mb' })); // 30mb para subir imágenes de referencia en base64
 
 const port = 8085;
 const server = http.createServer(app);
@@ -293,6 +293,8 @@ wss.on('connection', async (ws, req) => {
                     result = await generarImagenDiplo(message.prompt, params);
                 } else if (workflow === 'diplocolab') {
                     result = await generarImagenDiploColab(message.prompt, params);
+                } else if (workflow === 'diplocolabcn') {
+                    result = await generarImagenDiploColabCN(message.prompt, params);
                 } else if (workflow === 'local') {
                     result = await generarImagenLocal(message.prompt, params);
                 } else if (workflow === 'zimage') {
@@ -372,6 +374,59 @@ app.get(BASE_PATH + '/api/ping', (req, res) => {
         r.on('error', () => finish(false));
         r.end();
     } catch (e) { finish(false); }
+});
+
+// Sube una imagen de referencia (base64 desde el browser) al ComfyUI del Colab.
+// Devuelve el nombre con que quedó en ComfyUI/input/ para usarlo en LoadImage.
+app.post(BASE_PATH + '/api/upload-image', async (req, res) => {
+    try {
+        const { filename, dataUrl } = req.body || {};
+        if (!dataUrl) return res.json({ success: false, error: 'falta dataUrl' });
+        const m = /^data:.+?;base64,(.*)$/.exec(dataUrl);
+        const b64 = m ? m[1] : dataUrl;
+        const safe = (filename || `ref_${Date.now()}.png`).replace(/[^\w.\-]/g, '_');
+        const tmp = path.join(__dirname, 'public', 'imagenes', '_upload_' + safe);
+        fs.writeFileSync(tmp, Buffer.from(b64, 'base64'));
+        const result = await uploadImage(tmp); // -> { name, subfolder, type }
+        console.log(`📤 [upload-image] subida a ComfyUI: ${result && result.name}`);
+        res.json({ success: true, name: result.name, subfolder: result.subfolder || '', info: result });
+    } catch (e) {
+        console.error('[upload-image] error:', e.message);
+        res.json({ success: false, error: e.message });
+    }
+});
+
+// Corre SOLO el preprocesador sobre la imagen de referencia y devuelve la URL del
+// resultado, para que el usuario VEA cómo procesa antes de generar (vista previa).
+app.post(BASE_PATH + '/api/preprocess-preview', async (req, res) => {
+    try {
+        const { image, preprocessor, resolution, scale_by } = req.body || {};
+        if (!image) return res.json({ success: false, error: 'falta image (subí una referencia primero)' });
+        const wf = await readWorkflowPreprocess();
+        setIn(wf, "1", "image", image);
+        setIn(wf, "2", "scale_by", Number(scale_by) || 1.0);
+        setIn(wf, "3", "preprocessor", preprocessor || "CannyEdgePreprocessor");
+        setIn(wf, "3", "resolution", Number(resolution) || 512);
+        console.log(`🔍 [preprocess-preview] ${preprocessor} res=${resolution} scale=${scale_by} sobre ${image}`);
+        const out = await queuePollDownload(wf, "4");
+        res.json({ success: true, url: out.url, filename: out.filename });
+    } catch (e) {
+        console.error('[preprocess-preview] error:', e.message);
+        res.json({ success: false, error: e.message });
+    }
+});
+
+// Lista de preprocesadores disponibles en el AIO_Preprocessor del backend
+app.get(BASE_PATH + '/api/preprocessors', async (req, res) => {
+    try {
+        const oi = await fetchObjectInfo();
+        const node = oi.AIO_Preprocessor;
+        const opt = node && node.input && (node.input.optional || {});
+        const list = (opt && opt.preprocessor && Array.isArray(opt.preprocessor[0])) ? opt.preprocessor[0] : [];
+        res.json({ success: true, preprocessors: list });
+    } catch (e) {
+        res.json({ success: false, error: e.message });
+    }
 });
 
 // Endpoint para obtener modelos disponibles
@@ -532,6 +587,16 @@ async function readWorkflowDiploColab() {
     return JSON.parse(data);
 }
 
+async function readWorkflowDiploColabCN() {
+    const data = await fs.promises.readFile(path.join(__dirname, 'workflow_diplo_colab_cn.json'), 'utf8');
+    return JSON.parse(data);
+}
+
+async function readWorkflowPreprocess() {
+    const data = await fs.promises.readFile(path.join(__dirname, 'workflow_preprocess.json'), 'utf8');
+    return JSON.parse(data);
+}
+
 // Helper defensivo: setea un input SOLO si el nodo existe en el workflow.
 // Evita el crash "Cannot set properties of undefined" cuando un workflow
 // no tiene cierto nodo (p.ej. la version Colab sin LoRA/ControlNet).
@@ -578,6 +643,15 @@ const WORKFLOWS = {
         name: 'DIPLO Colab (Z-Image + Upscale 2x)',
         description: 'Z-Image-Turbo fp8 + upscale 2x AnimeSharp — corre en Colab, alta resolucion',
         readFn: readWorkflowDiploColab
+    },
+    // Igual que diplocolab pero con ControlNet experimental: imagen de referencia ->
+    // ImageScaleBy -> AIO_Preprocessor -> QwenImageDiffsynthControlnet (+ModelPatchLoader).
+    // El frontend lo activa con el toggle "Usar ControlNet" en el modo DIPLO Colab.
+    diplocolabcn: {
+        file: 'workflow_diplo_colab_cn.json',
+        name: 'DIPLO Colab + ControlNet',
+        description: 'Z-Image-Turbo fp8 + ControlNet (preprocesador sobre imagen de referencia) + upscale 2x',
+        readFn: readWorkflowDiploColabCN
     }
 };
 
@@ -714,6 +788,36 @@ async function pollHistoryAndEmit(promptId, ws, outputNode, promptText) {
     }
     console.warn('[poll] timeout esperando', promptId);
     sendSafe({ type: 'generation_status', status: 'error', message: '⌛ Timeout esperando la imagen de Colab' });
+}
+
+// Encola un workflow, polea /history y baja la imagen del outputNode a public/imagenes.
+// Devuelve { filename, url } servible por el browser. Para flujos SINCRONICOS (preview
+// del preprocesador) que responden por HTTP, no por WS.
+async function queuePollDownload(wf, outputNode) {
+    const promptId = await queuePrompt(wf);
+    const intervalMs = 3000, maxTries = 100; // ~5 min
+    for (let i = 0; i < maxTries; i++) {
+        await new Promise(r => setTimeout(r, intervalMs));
+        let hist;
+        try { hist = await getHistory(promptId); } catch (e) { continue; }
+        const entry = hist && hist[promptId];
+        if (!entry) continue;
+        const status = entry.status || {};
+        const outputs = entry.outputs || {};
+        let imgs = (outputs[outputNode] && outputs[outputNode].images) || null;
+        if (!imgs) for (const k of Object.keys(outputs)) { if (outputs[k].images && outputs[k].images.length) { imgs = outputs[k].images; break; } }
+        if ((status.completed || status.status_str === 'success') && imgs && imgs.length) {
+            const image = imgs[imgs.length - 1];
+            const parsed = parseComfyUrl(config.comfyUrl);
+            const sub = image.subfolder || '';
+            const src = `${parsed.baseUrl}/view?filename=${encodeURIComponent(image.filename)}&subfolder=${encodeURIComponent(sub)}&type=${encodeURIComponent(image.type)}`;
+            const dest = path.join(__dirname, 'public', 'imagenes', image.filename);
+            await downloadImage(src, dest, '');
+            return { filename: image.filename, url: `${IMAGE_BASE_URL}/imagenes/${image.filename}` };
+        }
+        if (status.status_str === 'error') throw new Error('ComfyUI reportó error en el workflow');
+    }
+    throw new Error('Timeout esperando el resultado');
 }
 
 async function downloadImage(url, filename, subfolder) {
@@ -1060,6 +1164,71 @@ async function generarImagenDiploColab(promptText, params = {}) {
     const promptId = await queuePrompt(wf);
     console.log(`✓ [DIPLO-COLAB] Prompt en cola con ID: ${promptId}`);
     // polled: true -> el server detecta el fin por HTTP /history (robusto ante WS caido)
+    return { promptId, outputNode: "86", polled: true };
+}
+
+// DIPLO-COLAB + ControlNet experimental. Igual que diplocolab pero con la cadena
+// LoadImage(61) -> ImageScaleBy(89) -> AIO_Preprocessor(80) -> QwenImageDiffsynthControlnet(75)
+// (+ ModelPatchLoader 76) que parchea el modelo del KSampler. Requiere ref_image ya subida.
+async function generarImagenDiploColabCN(promptText, params = {}) {
+    const wf = await readWorkflowDiploColabCN();
+
+    const seed = params.seed || Math.floor(Math.random() * 18446744073709551614) + 1;
+    const steps = params.steps || 8;
+    const cfg = params.cfg ?? 1.0;
+    const sampler_name = params.sampler_name || "euler";
+    const scheduler = params.scheduler || "simple";
+    const denoise = params.denoise ?? 0.55;
+    const width = params.width || 1024;
+    const height = params.height || 640;
+    const batch_size = params.batch_size || 1;
+    const unet_name = params.unet_name || "z_image_turbo_fp8_e4m3fn.safetensors.safetensors";
+    const weight_dtype = params.weight_dtype || "fp8_e4m3fn";
+    const vae_name = params.vae_name || "ultrafluxVAEImproved_v10.safetensors";
+    const clip_name = params.clip_name || "qwen_3_4b.safetensors.safetensors";
+    const clip_type = params.clip_type || "lumina2";
+    // ControlNet
+    const ref_image = params.ref_image;
+    const scale_by = params.scale_by ?? 1.0;
+    const scale_method = params.scale_method || "nearest-exact";
+    const preprocessor = params.preprocessor || "CannyEdgePreprocessor";
+    const preprocessor_resolution = params.preprocessor_resolution || 512;
+    const controlnet_strength = params.controlnet_strength ?? 0.80;
+    const model_patch_name = params.model_patch_name || "Z-Image-Turbo-Fun-Controlnet-Union.safetensors";
+
+    if (!ref_image) throw new Error('ControlNet activo pero falta la imagen de referencia (subila primero)');
+
+    setIn(wf, "6", "text", promptText);
+    setIn(wf, "7", "text", params.negative_prompt || "blurry, ugly, low quality, deformed hands, extra limbs, text, watermark");
+    setIn(wf, "3", "seed", seed);
+    setIn(wf, "3", "steps", steps);
+    setIn(wf, "3", "cfg", cfg);
+    setIn(wf, "3", "sampler_name", sampler_name);
+    setIn(wf, "3", "scheduler", scheduler);
+    setIn(wf, "3", "denoise", denoise);
+    setIn(wf, "13", "width", width);
+    setIn(wf, "13", "height", height);
+    setIn(wf, "13", "batch_size", batch_size);
+    setIn(wf, "16", "unet_name", unet_name);
+    setIn(wf, "16", "weight_dtype", weight_dtype);
+    setIn(wf, "17", "vae_name", vae_name);
+    setIn(wf, "28", "clip_name", clip_name);
+    setIn(wf, "28", "type", clip_type);
+    // ControlNet chain
+    setIn(wf, "61", "image", ref_image);
+    setIn(wf, "89", "scale_by", Number(scale_by));
+    setIn(wf, "89", "upscale_method", scale_method);
+    setIn(wf, "80", "preprocessor", preprocessor);
+    setIn(wf, "80", "resolution", Number(preprocessor_resolution));
+    setIn(wf, "75", "strength", Number(controlnet_strength));
+    setIn(wf, "76", "name", model_patch_name);
+
+    console.log(`🎨 [DIPLO-COLAB-CN] Generando:`, {
+        prompt: promptText.substring(0, 50) + '...', seed, steps, ref_image, preprocessor, controlnet_strength, scale_by
+    });
+
+    const promptId = await queuePrompt(wf);
+    console.log(`✓ [DIPLO-COLAB-CN] Prompt en cola con ID: ${promptId}`);
     return { promptId, outputNode: "86", polled: true };
 }
 

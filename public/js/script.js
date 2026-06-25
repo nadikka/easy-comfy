@@ -131,6 +131,7 @@ ws.onmessage = (event) => {
                 if (typeof resetModels === 'function') resetModels();
                 if (typeof loadAvailableModels === 'function') setTimeout(() => loadAvailableModels(true), 500);
                 if (typeof loadDiploModels === 'function') setTimeout(() => loadDiploModels(true), 700);
+                if (typeof loadPreprocessors === 'function') setTimeout(() => loadPreprocessors(true), 900);
                 break;
             case 'error':
                 // El WS a ComfyUI suele cortarse en tuneles free; NO pintamos rojo por eso.
@@ -235,8 +236,8 @@ function collectParams() {
             lora_name: getVal('loraName', 'Bradhamel_art_style.safetensors'),
             lora_strength_model: getVal('loraStrengthModel', 0.80),
             lora_strength_clip: getVal('loraStrengthClip', 1.00),
-            // ControlNet
-            ref_image: getVal('refImage', 'DSC09211 (2).jpg'),
+            // ControlNet — ref_image = imagen subida (hidden refImage) o nombre manual (modo diplo)
+            ref_image: getVal('refImage', '') || getVal('refImageName', 'DSC09211 (2).jpg'),
             preprocessor: getVal('preprocessor', 'CannyEdgePreprocessor'),
             preprocessor_low: getVal('preprocessorLow', 100),
             preprocessor_high: getVal('preprocessorHigh', 200),
@@ -291,15 +292,27 @@ document.getElementById('generateButton').addEventListener('click', () => {
         params.seed = Math.floor(Math.random() * 18446744073709551614) + 1;
         document.getElementById('seed').value = params.seed;
     }
-    
-    Logger.info(`📤 [${currentWorkflow}] Prompt: "${prompt.substring(0, 50)}${prompt.length > 50 ? '...' : ''}"`);
+
+    // Si estamos en DIPLO Colab y el toggle ControlNet está activo, usamos el workflow CN.
+    let effectiveWorkflow = currentWorkflow;
+    const cnToggle = document.getElementById('useControlnet');
+    if (currentWorkflow === 'diplocolab' && cnToggle && cnToggle.checked) {
+        if (!params.ref_image) {
+            alert('Activaste ControlNet pero no subiste una imagen de referencia. Subí una primero.');
+            genBtn.disabled = false; genBtn.textContent = '🚀 Generar Imagen';
+            return;
+        }
+        effectiveWorkflow = 'diplocolabcn';
+    }
+
+    Logger.info(`📤 [${effectiveWorkflow}] Prompt: "${prompt.substring(0, 50)}${prompt.length > 50 ? '...' : ''}"`);
     Logger.info(`📊 Params: ${JSON.stringify(params).substring(0, 200)}...`);
     showProgress('📤 Enviando prompt a ComfyUI...', 10);
-    
-    ws.send(JSON.stringify({ 
-        type: 'generarImagen', 
+
+    ws.send(JSON.stringify({
+        type: 'generarImagen',
         prompt: prompt,
-        workflow: currentWorkflow,
+        workflow: effectiveWorkflow,
         params: params
     }));
     
@@ -307,3 +320,74 @@ document.getElementById('generateButton').addEventListener('click', () => {
         updateProgress('⏳ Procesando en ComfyUI...', 30);
     }, 500);
 });
+
+// ── ControlNet: subir imagen de referencia + vista previa del preprocesado ──
+
+// Al elegir un archivo, lo sube al ComfyUI del Colab y guarda el nombre devuelto.
+document.addEventListener('DOMContentLoaded', () => {
+    const fileInput = document.getElementById('refImageFile');
+    if (!fileInput) return;
+    fileInput.addEventListener('change', async () => {
+        const file = fileInput.files && fileInput.files[0];
+        if (!file) return;
+        const status = document.getElementById('refImageStatus');
+        if (status) status.textContent = '⏳ Subiendo imagen al Colab...';
+        try {
+            const dataUrl = await new Promise((resolve, reject) => {
+                const r = new FileReader();
+                r.onload = () => resolve(r.result);
+                r.onerror = reject;
+                r.readAsDataURL(file);
+            });
+            const resp = await fetch(apiUrl('/api/upload-image'), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ filename: file.name, dataUrl })
+            });
+            const d = await resp.json();
+            if (d.success && d.name) {
+                document.getElementById('refImage').value = d.name;
+                if (status) status.textContent = `✅ Subida: ${d.name}`;
+                Logger.info(`✓ Imagen de referencia subida: ${d.name}`);
+            } else {
+                if (status) status.textContent = '❌ Error: ' + (d.error || 'desconocido');
+            }
+        } catch (e) {
+            if (status) status.textContent = '❌ Error subiendo: ' + e.message;
+        }
+    });
+});
+
+// Corre SOLO el preprocesador y muestra el resultado, para ver qué hace antes de generar.
+async function previewPreprocess() {
+    const image = document.getElementById('refImage').value;
+    const status = document.getElementById('preprocessStatus');
+    if (!image) { alert('Subí una imagen de referencia primero.'); return; }
+    const body = {
+        image,
+        preprocessor: getVal('preprocessor', 'CannyEdgePreprocessor'),
+        resolution: getVal('preprocessorRes', 512),
+        scale_by: getVal('scaleBy', 1.0)
+    };
+    if (status) status.textContent = '⏳ Preprocesando...';
+    try {
+        const resp = await fetch(apiUrl('/api/preprocess-preview'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+        const d = await resp.json();
+        if (d.success && d.url) {
+            const wrap = document.getElementById('preprocessPreviewWrap');
+            const img = document.getElementById('preprocessPreview');
+            img.src = d.url + '?t=' + Date.now(); // cache-bust
+            wrap.style.display = 'block';
+            if (status) status.textContent = '✅ Listo';
+            Logger.info(`✓ Preprocesado (${body.preprocessor}): ${d.url}`);
+        } else {
+            if (status) status.textContent = '❌ ' + (d.error || 'error');
+        }
+    } catch (e) {
+        if (status) status.textContent = '❌ ' + e.message;
+    }
+}

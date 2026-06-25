@@ -270,13 +270,30 @@
                     </div>
 
                     <!-- 4. ControlNet -->
-                    <div class="param-section" data-modes="diplo">
-                        <h4><span class="section-icon">🎯</span> ControlNet + Imagen de referencia</h4>
-                        <p class="section-desc">Guía la generación con una imagen de referencia (bordes, profundidad, pose…). <b>Preprocessor</b> = qué se extrae de la ref; <b>strength</b> = cuánto la sigue. Solo en el DIPLO completo: necesita una imagen subida al ComfyUI. (Se usa en tu repo propio.)</p>
+                    <div class="param-section" data-modes="diplo diplocolab">
+                        <h4><span class="section-icon">🎯</span> ControlNet + Imagen de referencia <span style="font-size:11px;color:#999;font-weight:400;">[experimental]</span></h4>
+                        <p class="section-desc">Guía la generación con una imagen tuya. Subís una imagen, elegís un <b>preprocesador</b> (qué se extrae: bordes/Canny, profundidad/Depth, pose/OpenPose…) y con <b>"Ver preprocesado"</b> ves cómo queda ANTES de generar, para entender qué hace. <b>Strength</b> = cuánto la sigue (0.7–0.9). Activá <b>"Usar ControlNet"</b> para que entre en la generación.</p>
+                        <label style="display:flex;align-items:center;gap:8px;margin-bottom:10px;font-weight:600;cursor:pointer;">
+                            <input type="checkbox" id="useControlnet"> Usar ControlNet en la generación
+                        </label>
+                        <input type="hidden" id="refImage" value="">
+                        <div class="form-group">
+                            <label>Imagen de referencia <span class="info-tip" data-tip="Subí una imagen; se manda al ComfyUI del Colab y se usa como base del preprocesador/ControlNet">i</span></label>
+                            <input type="file" id="refImageFile" accept="image/*">
+                            <small id="refImageStatus" style="color:#6b7280;display:block;margin-top:4px;"></small>
+                        </div>
+                        <div style="margin:8px 0;">
+                            <button type="button" class="config-button" onclick="previewPreprocess()" style="margin:0;">🔍 Ver preprocesado</button>
+                            <small id="preprocessStatus" style="color:#6b7280;margin-left:8px;"></small>
+                        </div>
+                        <div id="preprocessPreviewWrap" style="display:none;margin:10px 0;">
+                            <small style="color:#6b7280;">Vista previa del preprocesado (lo que "ve" el ControlNet):</small><br>
+                            <img id="preprocessPreview" alt="preview preprocesado" style="max-width:100%;border:1px solid #ddd;border-radius:8px;margin-top:4px;">
+                        </div>
                         <div class="form-row">
-                            <div class="form-group">
-                                <label>Imagen referencia <span class="info-tip" data-tip="Nombre del archivo de imagen en ComfyUI/input/. Se usa como base para ControlNet">i</span></label>
-                                <input type="text" id="refImage" value="DSC09211 (2).jpg">
+                            <div class="form-group" data-modes="diplo">
+                                <label>Imagen referencia (nombre) <span class="info-tip" data-tip="Nombre del archivo en ComfyUI/input/ (modo DIPLO completo)">i</span></label>
+                                <input type="text" id="refImageName" value="DSC09211 (2).jpg">
                             </div>
                             <div class="form-group">
                                 <label>Preprocessor <span class="info-tip" data-tip="Tipo de preprocesador ControlNet. Canny = bordes, Depth = profundidad, OpenPose = pose humana, HED = bordes suaves">i</span></label>
