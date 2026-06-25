@@ -5,368 +5,94 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ComfyUI - AI Image Generation</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            padding: 20px;
+            min-height: 100vh; padding: 20px;
         }
-        
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            background: white;
-            border-radius: 12px;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
-            overflow: hidden;
-        }
-        
-        .header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 20px 30px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        
-        .header h1 {
-            font-size: 24px;
-            font-weight: 600;
-        }
-        
-        .status-indicator {
-            width: 12px;
-            height: 12px;
-            border-radius: 50%;
-            display: inline-block;
-            margin-right: 8px;
-        }
-        
-        .status-connected {
-            background: #4CAF50;
-            box-shadow: 0 0 10px #4CAF50;
-        }
-        
-        .status-disconnected {
-            background: #f44336;
-            box-shadow: 0 0 10px #f44336;
-        }
-        
-        .content {
-            padding: 30px;
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 30px;
-        }
-        
-        .left-panel {
-            display: flex;
-            flex-direction: column;
-            gap: 25px;
-        }
-        
-        .right-panel {
-            display: flex;
-            flex-direction: column;
-            gap: 20px;
-        }
-        
-        @media (max-width: 1024px) {
-            .content {
-                grid-template-columns: 1fr;
-            }
-        }
-        
-        .config-section {
-            background: #f8f9fa;
-            padding: 20px;
-            border-radius: 8px;
-        }
-        
-        .config-section h3 {
-            font-size: 16px;
-            margin-bottom: 15px;
-            color: #333;
-        }
-        
-        .preset-buttons {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 15px;
-        }
-        
-        .preset-button {
-            padding: 8px 16px;
-            background: #2196F3;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 14px;
-            transition: background 0.3s;
-        }
-        
-        .preset-button:hover {
-            background: #0b7dda;
-        }
-        
-        .config-row {
-            display: flex;
-            gap: 10px;
-            align-items: center;
-        }
-        
-        .config-input {
-            flex: 1;
-            padding: 10px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            font-size: 14px;
-        }
-        
-        .config-button {
-            padding: 10px 20px;
-            background: #4CAF50;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-weight: 500;
-            transition: background 0.3s;
-        }
-        
-        .config-button:hover {
-            background: #45a049;
-        }
-        
-        .generation-section {
-            background: #fff;
-            padding: 25px;
-            border-radius: 8px;
-            border: 1px solid #e0e0e0;
-        }
-        
-        .generation-section h3 {
-            font-size: 18px;
-            margin-bottom: 20px;
-            color: #333;
-        }
-        
-        .form-group {
-            margin-bottom: 20px;
-        }
-        
-        .form-group label {
-            display: block;
-            margin-bottom: 8px;
-            font-weight: 500;
-            color: #555;
-            font-size: 14px;
-        }
-        
-        .form-group textarea {
-            width: 100%;
-            padding: 12px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            font-size: 14px;
-            resize: vertical;
-            min-height: 100px;
-            font-family: inherit;
-        }
-        
-        .form-group input[type="number"],
-        .form-group select {
-            width: 100%;
-            padding: 10px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            font-size: 14px;
-        }
-        
-        .form-row {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 15px;
-            margin-bottom: 20px;
-        }
-        
-        .seed-group {
-            display: flex;
-            gap: 10px;
-            align-items: flex-end;
-        }
-        
-        .seed-group .form-group {
-            flex: 1;
-            margin-bottom: 0;
-        }
-        
-        .random-button {
-            padding: 10px 16px;
-            background: #FF9800;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 14px;
-            white-space: nowrap;
-            transition: background 0.3s;
-        }
-        
-        .random-button:hover {
-            background: #F57C00;
-        }
-        
-        .generate-button {
-            width: 100%;
-            padding: 15px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 16px;
-            font-weight: 600;
-            transition: transform 0.2s;
-        }
-        
-        .generate-button:hover {
-            transform: translateY(-2px);
-        }
-        
-        .generate-button:active {
-            transform: translateY(0);
-        }
-        
-        .progress-section {
-            background: #f0f0f0;
-            border-radius: 8px;
-            padding: 15px;
-            margin-bottom: 20px;
-        }
-        
-        .progress-header {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 8px;
-            font-size: 14px;
-        }
-        
-        .progress-text {
-            font-weight: 600;
-            color: #333;
-        }
-        
-        .progress-percent {
-            color: #666;
-        }
-        
-        .progress-bar-container {
-            background: #ddd;
-            border-radius: 10px;
-            height: 24px;
-            overflow: hidden;
-        }
-        
-        .progress-bar {
-            background: linear-gradient(90deg, #4CAF50, #45a049);
-            height: 100%;
-            width: 0%;
-            transition: width 0.3s ease;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: white;
-            font-size: 12px;
-            font-weight: 600;
-        }
-        
-        #imageContainer {
-            text-align: center;
-            margin-bottom: 25px;
-        }
-        
-        #imageContainer img {
-            max-width: 100%;
-            border-radius: 8px;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
-        }
-        
-        .log-section {
-            background: #1e1e1e;
-            color: #d4d4d4;
-            padding: 20px;
-            border-radius: 8px;
-            max-height: 400px;
-            overflow-y: auto;
-            font-family: 'Courier New', monospace;
-            font-size: 13px;
-        }
-        
-        .log-section h4 {
-            margin-top: 0;
-            margin-bottom: 15px;
-            color: #4CAF50;
-            font-size: 16px;
-        }
-        
-        .log-entry {
-            padding: 4px 0;
-            border-bottom: 1px solid #333;
-            line-height: 1.6;
-        }
-        
-        .log-entry:last-child {
-            border-bottom: none;
-        }
-        
-        .log-info {
-            color: #4CAF50;
-        }
-        
-        .log-error {
-            color: #f44336;
-        }
-        
-        .log-warning {
-            color: #ff9800;
-        }
-        
-        .log-time {
-            color: #888;
-            margin-right: 10px;
-        }
-        
-        small {
-            color: #666;
-            font-size: 12px;
-        }
-        
-        /* Scrollbar personalizado para logs */
-        .log-section::-webkit-scrollbar {
-            width: 8px;
-        }
-        
-        .log-section::-webkit-scrollbar-track {
-            background: #2d2d2d;
-        }
-        
-        .log-section::-webkit-scrollbar-thumb {
-            background: #555;
-            border-radius: 4px;
-        }
-        
-        .log-section::-webkit-scrollbar-thumb:hover {
-            background: #666;
-        }
+        .container { max-width: 1200px; margin: 0 auto; background: white; border-radius: 12px; box-shadow: 0 10px 40px rgba(0,0,0,0.2); overflow: hidden; }
+        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px 30px; display: flex; justify-content: space-between; align-items: center; }
+        .header h1 { font-size: 24px; font-weight: 600; }
+        .status-indicator { width: 12px; height: 12px; border-radius: 50%; display: inline-block; margin-right: 8px; }
+        .status-connected { background: #4CAF50; box-shadow: 0 0 10px #4CAF50; }
+        .status-disconnected { background: #f44336; box-shadow: 0 0 10px #f44336; }
+        .content { padding: 30px; }
+        .config-section { background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 25px; }
+        .config-section h3 { font-size: 16px; margin-bottom: 15px; color: #333; }
+        .preset-buttons { display: flex; gap: 10px; margin-bottom: 15px; }
+        .preset-button { padding: 8px 16px; background: #2196F3; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; transition: background 0.3s; }
+        .preset-button:hover { background: #0b7dda; }
+        .preset-button.active { background: #0d47a1; box-shadow: 0 0 8px rgba(33,150,243,0.5); }
+        .config-row { display: flex; gap: 10px; align-items: center; }
+        .config-input { flex: 1; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; }
+        .config-button { padding: 10px 20px; background: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500; }
+        .config-button:hover { background: #45a049; }
+        .generation-section { background: #fff; padding: 25px; border-radius: 8px; border: 1px solid #e0e0e0; margin-bottom: 25px; }
+        .generation-section h3 { font-size: 18px; margin-bottom: 20px; color: #333; }
+        .workflow-selector { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
+        .workflow-btn { padding: 10px 20px; background: #e9ecef; color: #495057; border: 2px solid #dee2e6; border-radius: 8px; cursor: pointer; font-size: 14px; transition: all 0.3s; text-align: left; }
+        .workflow-btn:hover { background: #dde2e6; }
+        .workflow-btn.active { background: #667eea; color: white; border-color: #667eea; }
+        .workflow-btn .wf-name { font-weight: 600; display: block; }
+        .workflow-btn .wf-desc { font-size: 11px; opacity: 0.8; display: block; margin-top: 2px; }
+        .form-group { margin-bottom: 16px; }
+        .form-group label { display: block; margin-bottom: 4px; font-weight: 500; color: #555; font-size: 13px; }
+        .form-group textarea { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; resize: vertical; min-height: 90px; font-family: inherit; }
+        .form-group input[type="number"], .form-group input[type="text"], .form-group select { width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; }
+        .form-group input[type="range"] { width: 100%; }
+        .form-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 12px; }
+        .seed-group { display: flex; gap: 10px; align-items: flex-end; }
+        .seed-group .form-group { flex: 1; margin-bottom: 0; }
+        .random-button { padding: 8px 14px; background: #FF9800; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; white-space: nowrap; }
+        .random-button:hover { background: #F57C00; }
+        .generate-button { width: 100%; padding: 15px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; font-weight: 600; transition: transform 0.2s; }
+        .generate-button:hover { transform: translateY(-2px); }
+        .generate-button:active { transform: translateY(0); }
+        .generate-button:disabled { background: #ccc; cursor: not-allowed; transform: none; }
+        .progress-section { background: #f0f0f0; border-radius: 8px; padding: 15px; margin-bottom: 20px; }
+        .progress-header { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 14px; }
+        .progress-text { font-weight: 600; color: #333; }
+        .progress-percent { color: #666; }
+        .progress-bar-container { background: #ddd; border-radius: 10px; height: 24px; overflow: hidden; }
+        .progress-bar { background: linear-gradient(90deg, #4CAF50, #45a049); height: 100%; width: 0%; transition: width 0.3s ease; display: flex; align-items: center; justify-content: center; color: white; font-size: 12px; font-weight: 600; }
+        #imageContainer { text-align: center; margin-bottom: 25px; }
+        #imageContainer img { max-width: 100%; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
+        .log-section { background: #1e1e1e; color: #d4d4d4; padding: 20px; border-radius: 8px; max-height: 350px; overflow-y: auto; font-family: 'Courier New', monospace; font-size: 12px; }
+        .log-section h4 { margin-top: 0; margin-bottom: 15px; color: #4CAF50; font-size: 15px; }
+        .log-entry { padding: 4px 0; border-bottom: 1px solid #333; line-height: 1.6; }
+        .log-entry:last-child { border-bottom: none; }
+        .log-info { color: #4CAF50; } .log-error { color: #f44336; } .log-warning { color: #ff9800; } .log-time { color: #888; margin-right: 10px; }
+        small { color: #666; font-size: 12px; }
+        .log-section::-webkit-scrollbar { width: 8px; }
+        .log-section::-webkit-scrollbar-track { background: #2d2d2d; }
+        .log-section::-webkit-scrollbar-thumb { background: #555; border-radius: 4px; }
+
+        /* ── DIPLO params sections ── */
+        #diploParams { display: none; }
+        #diploParams.visible { display: block; }
+        .param-section { border: 1px solid #e0e0e0; border-radius: 8px; padding: 14px 16px; margin-bottom: 14px; background: #fafafa; }
+        .param-section h4 { font-size: 13px; margin-bottom: 10px; color: #555; display: flex; align-items: center; gap: 6px; }
+        .param-section h4 .section-icon { font-size: 16px; }
+
+        /* ── Tooltip ── */
+        .info-tip { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 50%; background: #2196F3; color: white; font-size: 10px; font-weight: bold; cursor: help; margin-left: 4px; position: relative; vertical-align: middle; }
+        .info-tip:hover::after { content: attr(data-tip); position: absolute; bottom: 22px; left: 50%; transform: translateX(-50%); background: #333; color: #fff; padding: 8px 11px; border-radius: 6px; font-size: 11px; font-weight: normal; white-space: normal; width: max-content; max-width: 240px; line-height: 1.4; text-align: left; box-shadow: 0 4px 12px rgba(0,0,0,0.25); z-index: 99; pointer-events: none; }
+        .info-tip:hover::before { content: ''; position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); border: 5px solid transparent; border-top-color: #333; z-index: 99; pointer-events: none; }
+
+        .range-row { display: flex; align-items: center; gap: 8px; }
+        .range-row input[type="range"] { flex: 1; }
+        .range-value { min-width: 36px; text-align: right; font-weight: 600; color: #667eea; font-size: 13px; }
+
+        /* ── Advanced toggle ── */
+        .advanced-toggle { cursor: pointer; color: #667eea; font-size: 12px; margin-top: 8px; display: inline-block; user-select: none; }
+        .advanced-toggle:hover { text-decoration: underline; }
+        .advanced-params { display: none; margin-top: 10px; padding-top: 10px; border-top: 1px dashed #ddd; }
+        .advanced-params.open { display: block; }
+        /* Descripcion general de cada nodo/seccion: que hace y como se edita */
+        .section-desc { font-size: 12px; color: #6b7280; margin: 2px 0 12px 0; line-height: 1.4; background: #f8f9fb; border-left: 3px solid #667eea; padding: 7px 10px; border-radius: 0 6px 6px 0; }
+        /* Secciones que solo aplican a ciertos workflows (se ocultan por JS segun el modo) */
+        .param-section[data-hidden="1"] { display: none; }
     </style>
 </head>
 <body>
@@ -378,93 +104,382 @@
                 <span id="statusText">Disconnected</span>
             </div>
         </div>
-        
         <div class="content">
-            <!-- Panel Izquierdo: Controles -->
-            <div class="left-panel">
-                <!-- Configuración de ComfyUI -->
-                <div class="config-section">
-                    <h3>⚙️ Configuración de ComfyUI</h3>
-                    <div class="preset-buttons">
-                        <button class="preset-button" onclick="setLocalhost()">Localhost</button>
-                        <button class="preset-button" onclick="setColab()">Colab (Cloudflare)</button>
-                    </div>
-                    <div class="config-row">
-                        <input type="text" id="comfyUrl" class="config-input" placeholder="URL de ComfyUI (ej: http://localhost:8188 o https://xxx.trycloudflare.com)">
-                        <button class="config-button" onclick="saveConfig()">Guardar y Conectar</button>
-                    </div>
-                    <small id="currentUrl"></small>
+            <div class="config-section">
+                <h3>⚙️ Configuración de ComfyUI</h3>
+                <div class="preset-buttons">
+                    <button class="preset-button" onclick="setLocalhost()">Localhost</button>
+                    <button class="preset-button" onclick="setColab()">Colab (Cloudflare)</button>
                 </div>
-                
-                <!-- Generación de Imágenes -->
-                <div class="generation-section">
-                    <h3>✨ Generar Imagen</h3>
-                    
+                <div class="config-row">
+                    <input type="text" id="comfyUrl" class="config-input" placeholder="URL de ComfyUI (ej: http://localhost:8188)">
+                    <button class="config-button" onclick="saveConfig()">Guardar y Conectar</button>
+                </div>
+                <small id="currentUrl"></small>
+            </div>
+
+            <div class="generation-section">
+                <h3>✨ Generar Imagen</h3>
+                <div class="workflow-selector" id="workflowSelector">
+                    <button class="workflow-btn active" data-workflow="diplocolab">
+                        <span class="wf-name">DIPLO Colab (Z-Image + Upscale 2x)</span>
+                        <span class="wf-desc">Z-Image-Turbo fp8 + upscale 2x — alta resolución, validado en Colab</span>
+                    </button>
+                    <button class="workflow-btn" data-workflow="zimage">
+                        <span class="wf-name">Z-Image rápido (sin upscale)</span>
+                        <span class="wf-desc">Z-Image-Turbo fp8 — txt2img directo, para previsualizar veloz</span>
+                    </button>
+                    <!-- Workflows ocultos para uso general (requieren assets que no estan en este Colab
+                         o son del path local AMD, ya cerrado). Se reactivan en el repo propio:
+                    <button class="workflow-btn" data-workflow="diplo">
+                        <span class="wf-name">DIPLO LowPoly + Tiles</span>
+                        <span class="wf-desc">Z-Image-Turbo + LoRA + ControlNet + Upscale (necesita LoRA + imagen ref)</span>
+                    </button>
+                    <button class="workflow-btn" data-workflow="local">
+                        <span class="wf-name">Z-Image GGUF (local)</span>
+                        <span class="wf-desc">Turbo Q5 en tu GPU AMD/ZLUDA — txt2img directo</span>
+                    </button>
+                    -->
+                </div>
+
+                <div class="form-group">
+                    <label>Prompt:</label>
+                    <textarea id="prompt" placeholder="Describe la imagen que querés generar..."></textarea>
+                </div>
+
+                <!-- ── SIMPLE workflow params ── -->
+                <div id="simpleParams">
                     <div class="form-group">
-                        <label for="prompt">Prompt:</label>
-                        <textarea id="prompt" placeholder="Describe la imagen que quieres generar..."></textarea>
+                        <label>Negative prompt <span class="info-tip" data-tip="Lo que NO querés en la imagen: blur, deformaciones, marcas de agua, texto, etc.">i</span></label>
+                        <textarea id="negPrompt" placeholder="text, watermark, blurry..." style="min-height:50px;">text, watermark, blurry, low quality</textarea>
                     </div>
-                    
                     <div class="form-row">
-                        <div class="form-group">
-                            <label for="modelSelect">Modelo:</label>
-                            <select id="modelSelect">
-                                <option value="realvisxl.safetensors">realvisxl.safetensors</option>
-                            </select>
-                        </div>
-                        
-                        <div class="form-group">
-                            <label for="steps">Steps:</label>
-                            <input type="number" id="steps" value="6" min="1" max="150">
-                        </div>
+                        <div class="form-group"><label>Modelo: <span class="info-tip" data-tip="Checkpoint a usar. Se cargan automáticamente desde ComfyUI al conectar">i</span></label><select id="modelSelect"><option value="realvisxl.safetensors">realvisxl.safetensors</option></select></div>
+                        <div class="form-group"><label>Steps: <span class="info-tip" data-tip="Pasos de muestreo. Z-Image Turbo va bien con 8. Más = más lento.">i</span></label><input type="number" id="steps" value="8" min="1" max="150"></div>
                     </div>
-                    
                     <div class="form-row">
+                        <div class="form-group"><label>Ancho:</label><input type="number" id="width" value="1024" min="64" max="2048" step="8"></div>
+                        <div class="form-group"><label>Alto:</label><input type="number" id="height" value="640" min="64" max="2048" step="8"></div>
+                    </div>
+                </div>
+
+                <!-- ── DIPLO workflow params ── -->
+                <div id="diploParams">
+                    <!-- 1. Prompt & Dimensiones -->
+                    <div class="param-section" data-modes="diplocolab diplo">
+                        <h4><span class="section-icon">📝</span> Prompt & Dimensiones</h4>
+                        <p class="section-desc">Define QUÉ se genera y a qué tamaño. El prompt principal va arriba; acá ajustás lo que NO querés (negative) y el tamaño base en píxeles. Más grande = más lento y más VRAM. Editá libremente; los defaults (1024×640) andan bien.</p>
                         <div class="form-group">
-                            <label for="width">Ancho:</label>
-                            <input type="number" id="width" value="512" min="64" max="2048" step="8">
+                            <label>Negative prompt <span class="info-tip" data-tip="Lo que NO querés en la imagen: blur, deformaciones, marcas de agua, etc.">i</span></label>
+                            <textarea id="diploNegPrompt" placeholder="blurry, ugly, low quality..." style="min-height:50px;">blurry, ugly, low quality, deformed hands, extra limbs, text, watermark</textarea>
                         </div>
-                        
-                        <div class="form-group">
-                            <label for="height">Alto:</label>
-                            <input type="number" id="height" value="512" min="64" max="2048" step="8">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Ancho base <span class="info-tip" data-tip="Ancho en píxeles de la generación inicial con KSampler (EmptySD3LatentImage)">i</span></label>
+                                <input type="number" id="diploWidth" value="1024" min="256" max="2048" step="8">
+                            </div>
+                            <div class="form-group">
+                                <label>Alto base <span class="info-tip" data-tip="Alto en píxeles de la generación inicial con KSampler (EmptySD3LatentImage)">i</span></label>
+                                <input type="number" id="diploHeight" value="640" min="256" max="2048" step="8">
+                            </div>
+                        </div>
+                        <div class="form-group" data-modes="diplo">
+                            <label>Prompt para tile refine (opcional) <span class="info-tip" data-tip="Prompt separado para el paso de refinado con tiles. Si se deja vacío, usa el prompt principal">i</span></label>
+                            <textarea id="tilePrompt" placeholder="Más corto que el principal, solo lo esencial..." style="min-height:40px;"></textarea>
                         </div>
                     </div>
-                    
-                    <div class="seed-group">
-                        <div class="form-group">
-                            <label for="seed">Semilla:</label>
-                            <input type="number" id="seed" value="-1" min="-1">
+
+                    <!-- 2. KSampler -->
+                    <div class="param-section" data-modes="diplocolab diplo">
+                        <h4><span class="section-icon">⚙️</span> KSampler (generación base)</h4>
+                        <p class="section-desc">El corazón del proceso: convierte el texto en imagen muestreando ruido. <b>Steps</b> = cuántas iteraciones (Z-Image Turbo va con ~8). <b>CFG</b> = qué tanto obedece el prompt (Turbo usa 1). <b>Sampler/Scheduler</b> = el algoritmo (euler/simple es seguro). Los dropdowns se llenan solos con lo que tiene el backend. Tocá si querés experimentar; con los defaults ya sale bien.</p>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Steps <span class="info-tip" data-tip="Cantidad de pasos de muestreo. Más = más calidad pero más lento. Z-Image-Turbo funciona bien con 4-12">i</span></label>
+                                <input type="number" id="diploSteps" value="8" min="1" max="150">
+                            </div>
+                            <div class="form-group">
+                                <label>CFG <span class="info-tip" data-tip="Classifier-Free Guidance: qué tanto sigue el prompt. 1 = sigue el prompt exacto, 7+ = más creativo pero puede distorsionar">i</span></label>
+                                <input type="number" id="diploCfg" value="1.0" min="1" max="30" step="0.5">
+                            </div>
+                            <div class="form-group">
+                                <label>Denoise <span class="info-tip" data-tip="Fuerza de eliminación de ruido. 1.0 = generación desde cero, 0.5 = mantiene 50% de la imagen original. Para txt2img puro: 1.0">i</span></label>
+                                <input type="number" id="diploDenoise" value="0.55" min="0.05" max="1" step="0.05">
+                            </div>
                         </div>
-                        <button class="random-button" onclick="randomizeSeed()">🎲 Aleatorio</button>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Sampler <span class="info-tip" data-tip="Algoritmo de muestreo. euler = rápido y limpio, dpmpp_2m = más detalle, ipndm = suave">i</span></label>
+                                <select id="diploSampler">
+                                    <option value="euler" selected>euler</option>
+                                    <option value="euler_ancestral">euler_ancestral</option>
+                                    <option value="heun">heun</option>
+                                    <option value="heunpp2">heunpp2</option>
+                                    <option value="dpm_2">dpm_2</option>
+                                    <option value="dpm_2_ancestral">dpm_2_ancestral</option>
+                                    <option value="lms">lms</option>
+                                    <option value="dpmpp_2m">dpmpp_2m</option>
+                                    <option value="dpmpp_2m_sde">dpmpp_2m_sde</option>
+                                    <option value="dpmpp_sde">dpmpp_sde</option>
+                                    <option value="dpmpp_3m_sde">dpmpp_3m_sde</option>
+                                    <option value="ipndm">ipndm</option>
+                                    <option value="ipndm_v">ipndm_v</option>
+                                    <option value="deis">deis</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Scheduler <span class="info-tip" data-tip="Estrategia de scheduling de ruido. simple = lineal, normal = estándar SD, ddim_uniform = más variación">i</span></label>
+                                <select id="diploScheduler">
+                                    <option value="simple" selected>simple</option>
+                                    <option value="normal">normal</option>
+                                    <option value="karras">karras</option>
+                                    <option value="exponential">exponential</option>
+                                    <option value="sgm_uniform">sgm_uniform</option>
+                                    <option value="ddim_uniform">ddim_uniform</option>
+                                </select>
+                            </div>
+                        </div>
                     </div>
-                    
-                    <button class="generate-button" id="generateButton">🚀 Generar Imagen</button>
+
+                    <!-- 3. LoRA -->
+                    <div class="param-section" data-modes="diplo">
+                        <h4><span class="section-icon">🧩</span> LoRA</h4>
+                        <p class="section-desc">Inyecta un estilo entrenado aparte (un .safetensors) sobre el modelo. <b>Model/CLIP strength</b> = cuánto pesa (0.7–0.9 normal). Solo en el DIPLO completo: este Colab no tiene LoRA cargado, así que el estilo lowpoly sale del modelo+prompt. (Se usa en tu repo propio con tus LoRAs.)</p>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>LoRA name <span class="info-tip" data-tip="Archivo .safetensors del LoRA a cargar. Define el estilo visual. Se llena solo desde ComfyUI al conectar">i</span></label>
+                                <select id="loraName"><option value="Bradhamel_art_style.safetensors">Bradhamel_art_style.safetensors</option></select>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Model strength <span class="info-tip" data-tip="Intensidad del LoRA sobre el modelo UNET. 0 = no se aplica, 1 = fuerza completa. 0.7-0.9 es lo normal">i</span></label>
+                                <div class="range-row">
+                                    <input type="range" id="loraStrengthModel" value="0.80" min="0.1" max="1.5" step="0.05">
+                                    <span class="range-value" id="loraStrengthModelVal">0.80</span>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>CLIP strength <span class="info-tip" data-tip="Intensidad del LoRA sobre el CLIP (text encoder). Afecta qué tan fuerte el prompt sigue el estilo. 1.0 es lo estándar">i</span></label>
+                                <div class="range-row">
+                                    <input type="range" id="loraStrengthClip" value="1.00" min="0.1" max="1.5" step="0.05">
+                                    <span class="range-value" id="loraStrengthClipVal">1.00</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 4. ControlNet -->
+                    <div class="param-section" data-modes="diplo">
+                        <h4><span class="section-icon">🎯</span> ControlNet + Imagen de referencia</h4>
+                        <p class="section-desc">Guía la generación con una imagen de referencia (bordes, profundidad, pose…). <b>Preprocessor</b> = qué se extrae de la ref; <b>strength</b> = cuánto la sigue. Solo en el DIPLO completo: necesita una imagen subida al ComfyUI. (Se usa en tu repo propio.)</p>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Imagen referencia <span class="info-tip" data-tip="Nombre del archivo de imagen en ComfyUI/input/. Se usa como base para ControlNet">i</span></label>
+                                <input type="text" id="refImage" value="DSC09211 (2).jpg">
+                            </div>
+                            <div class="form-group">
+                                <label>Preprocessor <span class="info-tip" data-tip="Tipo de preprocesador ControlNet. Canny = bordes, Depth = profundidad, OpenPose = pose humana, HED = bordes suaves">i</span></label>
+                                <select id="preprocessor">
+                                    <option value="CannyEdgePreprocessor" selected>Canny Edge</option>
+                                    <option value="DepthAnythingPreprocessor">Depth Anything</option>
+                                    <option value="HEDPreprocessor">HED (bordes suaves)</option>
+                                    <option value="OpenposePreprocessor">OpenPose (pose)</option>
+                                    <option value="LineArtPreprocessor">Line Art</option>
+                                    <option value="Manga2Anime_LineArt_Preprocessor">Anime Line Art</option>
+                                    <option value="MLSDPreprocessor">MLSD (rectas)</option>
+                                    <option value="ScribblePreprocessor">Scribble</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Low threshold <span class="info-tip" data-tip="Umbral bajo de Canny. Pixeles debajo de este valor NO son bordes. 50-150 es lo normal">i</span></label>
+                                <input type="number" id="preprocessorLow" value="100" min="1" max="255">
+                            </div>
+                            <div class="form-group">
+                                <label>High threshold <span class="info-tip" data-tip="Umbral alto de Canny. Pixeles arriba de este valor SÍ son bordes. 150-250 es lo normal">i</span></label>
+                                <input type="number" id="preprocessorHigh" value="200" min="1" max="255">
+                            </div>
+                            <div class="form-group">
+                                <label>Resolution <span class="info-tip" data-tip="Resolución a la que se procesa la imagen de referencia. 512 es buen balance calidad/velocidad">i</span></label>
+                                <input type="number" id="preprocessorRes" value="512" min="64" max="2048" step="64">
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>ControlNet strength <span class="info-tip" data-tip="Qué tanto influye ControlNet en la generación. 0 = ignora la referencia, 1 = sigue fielmente. 0.7-0.95 es lo normal">i</span></label>
+                                <div class="range-row">
+                                    <input type="range" id="controlnetStrength" value="0.90" min="0.1" max="1.5" step="0.05">
+                                    <span class="range-value" id="controlnetStrengthVal">0.90</span>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>Scale ref <span class="info-tip" data-tip="Factor de escala de la imagen de referencia antes de entrar al pipeline. <1 = reduce, >1 = amplía">i</span></label>
+                                <div class="range-row">
+                                    <input type="range" id="scaleBy" value="0.19" min="0.05" max="2" step="0.01">
+                                    <span class="range-value" id="scaleByVal">0.19</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 5. Tile Refine -->
+                    <div class="param-section" data-modes="diplo">
+                        <h4><span class="section-icon">🧱</span> Tile Refine (upscale con tiles)</h4>
+                        <p class="section-desc">Refinado de alta resolución dividiendo la imagen en mosaicos y regenerando cada uno con poco denoise. Da más detalle pero es delicado de calibrar. Solo en el DIPLO completo. (En "DIPLO Colab" el upscale es directo 2× — más simple y robusto.)</p>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Tile steps <span class="info-tip" data-tip="Pasos de muestreo para el refinado de cada tile. Menos que los steps base, típicamente 5-15">i</span></label>
+                                <input type="number" id="tileSteps" value="10" min="1" max="50">
+                            </div>
+                            <div class="form-group">
+                                <label>Tile denoise <span class="info-tip" data-tip="Cuánto ruido agregar en el tile refine. 0.1-0.3 mantiene la estructura, 0.5+ cambia más">i</span></label>
+                                <div class="range-row">
+                                    <input type="range" id="tileDenoise" value="0.2" min="0.05" max="1" step="0.05">
+                                    <span class="range-value" id="tileDenoiseVal">0.20</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Tile cols <span class="info-tip" data-tip="Cantidad de columnas en la grilla de tiles. 2-4 es lo normal">i</span></label>
+                                <input type="number" id="tileCols" value="3" min="1" max="8">
+                            </div>
+                            <div class="form-group">
+                                <label>Tile rows <span class="info-tip" data-tip="Cantidad de filas en la grilla de tiles. 2-4 es lo normal">i</span></label>
+                                <input type="number" id="tileRows" value="3" min="1" max="8">
+                            </div>
+                            <div class="form-group">
+                                <label>Tile overlap <span class="info-tip" data-tip="Solapamiento entre tiles como fracción (0.05 = 5%). Reduce líneas de unión visibles">i</span></label>
+                                <input type="number" id="tileOverlap" value="0.05" min="0" max="0.3" step="0.01">
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Tile sampler <span class="info-tip" data-tip="Sampler para el tile refine. Generalmente mismo que el base">i</span></label>
+                                <select id="tileSampler">
+                                    <option value="euler" selected>euler</option>
+                                    <option value="euler_ancestral">euler_ancestral</option>
+                                    <option value="dpmpp_2m">dpmpp_2m</option>
+                                    <option value="dpmpp_2m_sde">dpmpp_2m_sde</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Tile scheduler <span class="info-tip" data-tip="Scheduler para tile refine. simple = comportamiento más predecible">i</span></label>
+                                <select id="tileScheduler">
+                                    <option value="simple" selected>simple</option>
+                                    <option value="normal">normal</option>
+                                    <option value="karras">karras</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 6. Output / Upscale -->
+                    <div class="param-section" data-modes="diplocolab diplo">
+                        <h4><span class="section-icon">📐</span> Output & Upscale</h4>
+                        <p class="section-desc">El último paso: agranda la imagen con un modelo de upscale. En <b>DIPLO Colab</b> el upscale es directo 2× (la salida final sale al doble del tamaño base; el "Upscale model" en Modelos avanzados es lo que aplica). Los campos de tamaño/resize de abajo solo cuentan en el DIPLO completo.</p>
+                        <div class="form-row" data-modes="diplo">
+                            <div class="form-group">
+                                <label>Output ancho <span class="info-tip" data-tip="Ancho final en píxeles después del upscale + resize. Determina el tamaño de la imagen de salida">i</span></label>
+                                <input type="number" id="upscaleWidth" value="1128" min="256" max="4096" step="8">
+                            </div>
+                            <div class="form-group">
+                                <label>Output alto <span class="info-tip" data-tip="Alto final en píxeles después del upscale + resize">i</span></label>
+                                <input type="number" id="upscaleHeight" value="672" min="256" max="4096" step="8">
+                            </div>
+                        </div>
+                        <div class="form-row" data-modes="diplo">
+                            <div class="form-group">
+                                <label>Resize mode <span class="info-tip" data-tip="Cómo ajustar la imagen a las dimensiones finales: crop = recorta, stretch = estira, pad = agrega bordes">i</span></label>
+                                <select id="upscaleResizeMode">
+                                    <option value="crop" selected>crop (recortar)</option>
+                                    <option value="stretch">stretch (estirar)</option>
+                                    <option value="pad">pad (bordes)</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Resize method <span class="info-tip" data-tip="Algoritmo de redimensionado. lanczos = mejor calidad, nearest-exact = pixel art / lowpoly, bilinear = rápido">i</span></label>
+                                <select id="upscaleResizeMethod">
+                                    <option value="nearest-exact" selected>nearest-exact</option>
+                                    <option value="lanczos">lanczos</option>
+                                    <option value="bilinear">bilinear</option>
+                                    <option value="bicubic">bicubic</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Advanced models -->
+                        <span class="advanced-toggle" onclick="toggleAdvanced()">🔧 Modelos avanzados ▸</span>
+                        <div class="advanced-params" id="advancedParams">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>UNET model <span class="info-tip" data-tip="Modelo de difusión principal. Z-Image-Turbo es rápido y funciona bien con pocos steps. Se llena solo desde ComfyUI">i</span></label>
+                                    <select id="unetName"><option value="z_image_turbo_fp8_e4m3fn.safetensors.safetensors">z_image_turbo_fp8_e4m3fn.safetensors.safetensors</option></select>
+                                </div>
+                                <div class="form-group">
+                                    <label>Weight dtype <span class="info-tip" data-tip="Precisión de los pesos: fp8_e4m3fn = rápido y eficiente VRAM, fp16 = más preciso pero más pesado">i</span></label>
+                                    <select id="weightDtype">
+                                        <option value="fp8_e4m3fn" selected>fp8_e4m3fn</option>
+                                        <option value="fp8_e5m2">fp8_e5m2</option>
+                                        <option value="fp16">fp16</option>
+                                        <option value="bf16">bf16</option>
+                                        <option value="default">default</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>VAE model <span class="info-tip" data-tip="Variational Autoencoder. UltraFlux está optimizado para modelos Flux/Z-Image. Se llena solo desde ComfyUI">i</span></label>
+                                    <select id="vaeName"><option value="ultrafluxVAEImproved_v10.safetensors">ultrafluxVAEImproved_v10.safetensors</option></select>
+                                </div>
+                                <div class="form-group">
+                                    <label>CLIP model <span class="info-tip" data-tip="Text encoder (formato GGUF). Qwen 4B es el CLIP que usa Z-Image-Turbo. Se llena solo desde ComfyUI">i</span></label>
+                                    <select id="clipName"><option value="qwen_3_4b.safetensors.safetensors">qwen_3_4b.safetensors.safetensors</option></select>
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>Upscale model <span class="info-tip" data-tip="Modelo de upscale. AnimeSharp = optimizado para ilustraciones/estilos limpios. Se llena solo desde ComfyUI">i</span></label>
+                                    <select id="upscaleModel"><option value="2x-AnimeSharpV4_RCAN.safetensors">2x-AnimeSharpV4_RCAN.safetensors</option></select>
+                                </div>
+                                <div class="form-group" data-modes="diplo">
+                                    <label>ControlNet patch <span class="info-tip" data-tip="Modelo de ControlNet Union que acepta múltiples tipos de preprocesadores. Se llena solo desde ComfyUI">i</span></label>
+                                    <select id="modelPatchName"><option value="Z-Image-Turbo-Fun-Controlnet-Union.safetensors">Z-Image-Turbo-Fun-Controlnet-Union.safetensors</option></select>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="seed-group">
+                    <div class="form-group">
+                        <label>Semilla <span class="info-tip" data-tip="Semilla aleatoria. -1 = aleatoria cada vez. Fijar un número = resultados reproducibles">i</span></label>
+                        <input type="number" id="seed" value="-1" min="-1">
+                    </div>
+                    <button class="random-button" onclick="randomizeSeed()">🎲 Aleatorio</button>
+                </div>
+
+                <button class="generate-button" id="generateButton">🚀 Generar Imagen</button>
+            </div>
+
+            <div id="progressSection" class="progress-section" style="display: none;">
+                <div class="progress-header">
+                    <span id="progressText" class="progress-text">Generando...</span>
+                    <span id="progressPercent" class="progress-percent">0%</span>
+                </div>
+                <div class="progress-bar-container">
+                    <div id="progressBar" class="progress-bar"></div>
                 </div>
             </div>
-            
-            <!-- Panel Derecho: Imagen y Logs -->
-            <div class="right-panel">
-                <!-- Barra de progreso -->
-                <div id="progressSection" class="progress-section" style="display: none;">
-                    <div class="progress-header">
-                        <span id="progressText" class="progress-text">Generando...</span>
-                        <span id="progressPercent" class="progress-percent">0%</span>
-                    </div>
-                    <div class="progress-bar-container">
-                        <div id="progressBar" class="progress-bar"></div>
-                    </div>
-                </div>
-                
-                <!-- Imagen generada -->
-                <div id="imageContainer"></div>
-                
-                <!-- Logs -->
-                <div class="log-section">
-                    <h4>📋 Node.js Console</h4>
-                    <div id="logContainer">
-                        <div class="log-entry log-info">Sistema iniciado...</div>
-                    </div>
+
+            <div id="imageContainer"></div>
+
+            <div class="log-section">
+                <h4>📋 Node.js Console</h4>
+                <div id="logContainer">
+                    <div class="log-entry log-info">Sistema iniciado...</div>
                 </div>
             </div>
         </div>

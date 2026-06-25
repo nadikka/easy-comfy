@@ -56,6 +56,75 @@ async function loadAvailableModels(forceReload = false) {
     }
 }
 
+// Llena los dropdowns de modelos del workflow DIPLO desde /object_info
+// Preserva el valor por defecto si ComfyUI está offline o el archivo no aparece en la lista.
+let diploModelsLoaded = false;
+
+async function loadDiploModels(forceReload = false) {
+    if (diploModelsLoaded && !forceReload) return;
+
+    const mapping = [
+        { id: 'unetName',       key: 'unet_name' },
+        { id: 'vaeName',        key: 'vae_name' },
+        { id: 'clipName',       key: 'clip_name' },
+        { id: 'loraName',       key: 'lora_name' },
+        { id: 'upscaleModel',   key: 'upscale_model_name' },
+        { id: 'modelPatchName', key: 'model_patch_name' },
+        // sampler/scheduler del KSampler core — se llenan con lo que reporta el backend
+        { id: 'diploSampler',   key: 'sampler_name' },
+        { id: 'diploScheduler', key: 'scheduler' }
+    ];
+
+    try {
+        Logger.info('🔍 Cargando modelos DIPLO desde ComfyUI...');
+        const response = await fetch(apiUrl('/api/object-info'));
+        const data = await response.json();
+
+        if (!data.success || !data.options) {
+            Logger.warning('⚠️ No se pudieron cargar los modelos DIPLO: ' + (data.error || 'sin datos'));
+            return;
+        }
+
+        let totalLoaded = 0;
+        mapping.forEach(({ id, key }) => {
+            const sel = document.getElementById(id);
+            const list = data.options[key];
+            if (!sel || !Array.isArray(list) || list.length === 0) return;
+
+            const current = sel.value; // valor por defecto actual
+            sel.innerHTML = '';
+            list.forEach(name => {
+                const opt = document.createElement('option');
+                opt.value = name;
+                opt.textContent = name;
+                sel.appendChild(opt);
+            });
+            // Si el default no está en la lista (ej: nombre con doble extensión),
+            // lo agregamos igual para no perderlo.
+            if (!list.includes(current) && current) {
+                const opt = document.createElement('option');
+                opt.value = current;
+                opt.textContent = current + ' (default, no listado)';
+                sel.insertBefore(opt, sel.firstChild);
+            }
+            sel.value = current;
+            totalLoaded += list.length;
+        });
+
+        diploModelsLoaded = true;
+        Logger.info(`✓ Dropdowns DIPLO actualizados (${totalLoaded} entradas)`);
+    } catch (error) {
+        Logger.error('❌ Error al cargar modelos DIPLO: ' + error.message);
+    }
+}
+
+// Resetear también los modelos DIPLO cuando cambia la conexión
+const _origResetModels = resetModels;
+resetModels = function() {
+    _origResetModels();
+    diploModelsLoaded = false;
+};
+
 // Función para randomizar la semilla
 function randomizeSeed() {
     const seedInput = document.getElementById('seed');
@@ -73,6 +142,7 @@ document.addEventListener('DOMContentLoaded', () => {
     setTimeout(() => {
         if (window.comfyConnected) {
             loadAvailableModels();
+            loadDiploModels();
         } else {
             Logger.info('⏳ Esperando conexión a ComfyUI para cargar modelos...');
         }

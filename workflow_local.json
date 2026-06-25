@@ -1,0 +1,99 @@
+{
+  "16": {
+    "class_type": "UnetLoaderGGUF",
+    "inputs": {
+      "unet_name": "z_image_turbo-Q5_K_M.gguf"
+    }
+  },
+  "28": {
+    "class_type": "CLIPLoaderGGUF",
+    "inputs": {
+      "clip_name": "qwen_3_4b.safetensors",
+      "type": "lumina2"
+    }
+  },
+  "17": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "ultrafluxVAEImproved_v10.safetensors"
+    }
+  },
+  "6": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": [
+        "28",
+        0
+      ],
+      "text": "A male character with short, spiky dark brown hair rendered in sharp angular polygons stands centered in frame, facing slightly off-center toward viewer’s left; his face is defined by flat, geometric planes with minimal shading—two small blush marks on cheeks, wide black pupils without irises, thin eyebrows angled downward into a neutral expression, nose as a single triangular facet devoid of pores or texture. His skin tone is pale peach under diffuse ambient illumination that casts subtle gradient shadows along jawline and neck contours, suggesting overcast daylight from upper right quadrant casting faint backlighting across shoulder blades. He wears an olive-green V-neck t-shirt made of matte polygonal mesh material showing slight creasing at shoulders implying movement or tension, collarbone exposed beneath neckline; sleeves end abruptly mid-arm revealing bare forearm geometry. Background consists of layered mountain ridges receding into atmospheric haze using muted blues and grays—with foreground vegetation depicted as simplified blocky clusters of green-tinted foliage interspersed with indistinct blue water patches resembling stagnant pools. Camera angle is eye-level medium close-up with shallow depth-of-field blurring distant peaks while keeping figure sharply focused against softly blurred horizon line; background elements are reduced to silhouette-like forms lacking detail but retaining spatial layering through tonal gradients. Lighting appears non-directional yet directional enough to produce hard-edged glows around ears and brow ridge, indicating a high-angle source masked behind clouds near top-right corner. No props, signs, or accessories exist beyond clothing and natural terrain features. Composition balances asymmetrical placement of headspace relative to torso within central third zone, leaving significant negative space above and below where sky meets ground plane—an intentional emptiness emphasizing isolation. All surfaces exhibit pixelated-low-poly rendering consistent with Ern Hilleli's signature aesthetic: clean edges, rigid geometry, lack of organic imperfections except facial expressions conveyed via simplification rather than realism. The entire scene lacks dynamic motion blur or chromatic aberration, maintaining static still-life quality despite implied environmental context. Reflections absent due to matte finish and foggy atmosphere obscuring any specular response. Textures limited to flat color blocks, vertex-based contour transitions between shapes, zero fine-grained detailing like sweat beads or garment stitching. Only human form remains fully resolved amidst abstract landscape abstraction."
+    }
+  },
+  "7": {
+    "class_type": "CLIPTextEncode",
+    "inputs": {
+      "clip": [
+        "28",
+        0
+      ],
+      "text": "blurry ugly bad"
+    }
+  },
+  "13": {
+    "class_type": "EmptySD3LatentImage",
+    "inputs": {
+      "width": 1024,
+      "height": 640,
+      "batch_size": 1
+    }
+  },
+  "3": {
+    "class_type": "KSampler",
+    "inputs": {
+      "model": [
+        "16",
+        0
+      ],
+      "positive": [
+        "6",
+        0
+      ],
+      "negative": [
+        "7",
+        0
+      ],
+      "latent_image": [
+        "13",
+        0
+      ],
+      "seed": 856043364873037,
+      "steps": 12,
+      "cfg": 1.0,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1.0
+    }
+  },
+  "8": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": [
+        "3",
+        0
+      ],
+      "vae": [
+        "17",
+        0
+      ]
+    }
+  },
+  "9": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": [
+        "8",
+        0
+      ],
+      "filename_prefix": "DIPLO"
+    }
+  }
+}

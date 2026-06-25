@@ -133,7 +133,7 @@ function setupComfyWebSocketHandlers() {
         if (message.type === 'progress') {
             const value = message.data.value;
             const max = message.data.max;
-            const percent = Math.round((value / max) * 100);
+            const percent = max ? Math.round((value / max) * 100) : 0;
             
             console.log(`Progress: ${value}/${max} (${percent}%)`);
             
@@ -160,9 +160,29 @@ function setupComfyWebSocketHandlers() {
 
         if (message.type === 'executed') {
             const details = promptDetails[message.data.prompt_id];
-            console.log(`Execution completed for prompt ID: ${message.data.prompt_id}`);
+            console.log(`Execution completed for prompt ID: ${message.data.prompt_id}, node: ${message.data.node}`);
 
-            const images = message.data.output.images;
+            // Prompts marcados como 'polled' se resuelven por HTTP (pollHistoryAndEmit),
+            // no por este handler WS — evita emitir la imagen dos veces.
+            if (details && details.polled) {
+                console.log('(prompt polled por HTTP, el handler WS lo ignora)');
+                return;
+            }
+
+            // Anti-flicker: este workflow tiene varios nodos de salida (SaveImage/Preview).
+            // Si conocemos el nodo final esperado, ignoramos el resto.
+            if (details && details.outputNode && String(message.data.node) !== String(details.outputNode)) {
+                console.log(`(nodo ${message.data.node} no es la salida final ${details.outputNode}, se ignora)`);
+                return;
+            }
+
+            // Varios nodos emiten 'executed' (ShowText, PreviewImage, etc.) sin imagenes.
+            // Solo procesamos los que efectivamente devuelven imagenes.
+            const images = message.data.output && message.data.output.images;
+            if (!images || images.length === 0) {
+                console.log(`(sin imagenes en este nodo, se ignora)`);
+                return;
+            }
             console.log('Images:', images);
 
             for (const image of images) {
@@ -185,13 +205,14 @@ function setupComfyWebSocketHandlers() {
                 wss.clients.forEach(client => {
                     if (client.readyState === WebSocket.OPEN) {
                         const imagePath = subfolder ? `/imagenes/${subfolder}/${image.filename}` : `/imagenes/${image.filename}`;
-                        // HARDCODED: Siempre usar la URL absoluta del VPS
-                        const imageUrl = `https://vps-4455523-x.dattaweb.com/comfyweb${imagePath}`;
+                        // Base configurable via env IMAGE_BASE_URL. Default = VPS (no rompe produccion).
+                        // Para uso local: IMAGE_BASE_URL="http://localhost:8085"
+                        const imageUrl = `${IMAGE_BASE_URL}${imagePath}`;
                         console.log(`📤 Sending image URL to client: ${imageUrl}`);
                         client.send(JSON.stringify({
                             type: 'image_generated',
                             url: imageUrl,
-                            prompt: details.prompt
+                            prompt: details ? details.prompt : ''
                         }));
                     }
                 });
@@ -205,6 +226,9 @@ const app = express();
 // Configurar subpath para producción (cuando se accede desde /comfyweb)
 const BASE_PATH = process.env.BASE_PATH || '';
 const PUBLIC_URL = process.env.PUBLIC_URL || '';
+// Base absoluta para las URLs de imagenes que se envian al cliente.
+// Default = VPS de produccion. En local: export IMAGE_BASE_URL="http://localhost:8085"
+const IMAGE_BASE_URL = process.env.IMAGE_BASE_URL || 'https://vps-4455523-x.dattaweb.com/comfyweb';
 
 app.use(BASE_PATH, express.static(path.join(__dirname, 'public')));
 app.use(bodyParser.json());
@@ -244,7 +268,7 @@ wss.on('connection', async (ws, req) => {
         const message = JSON.parse(data);
         if (message.type === 'generarImagen') {
             console.log(`📥 Prompt received: ${message.prompt}`);
-            console.log(`📊 Parámetros:`, message.params);
+            console.log(`📊 Workflow: ${message.workflow || 'simple'}, Parámetros:`, message.params);
             
             // Notificar al cliente que se está procesando
             ws.send(JSON.stringify({
@@ -255,8 +279,37 @@ wss.on('connection', async (ws, req) => {
             
             try {
                 const params = message.params || {};
-                const promptId = await generarImagen(message.prompt, params);
-                promptDetails[promptId] = { prompt: message.prompt, ws: ws }; // Guarda prompt y websocket
+                const workflow = message.workflow || 'simple';
+
+                // Proveedor serverless: fal.ai (Z-Image Turbo). No usa ComfyUI ni GPU local.
+                // Se activa con PROVIDER=fal (env) o config.provider="fal".
+                if ((process.env.PROVIDER || config.provider || 'comfyui') === 'fal') {
+                    await generarImagenFal(message.prompt, params, ws);
+                    return;
+                }
+
+                let result;
+                if (workflow === 'diplo') {
+                    result = await generarImagenDiplo(message.prompt, params);
+                } else if (workflow === 'diplocolab') {
+                    result = await generarImagenDiploColab(message.prompt, params);
+                } else if (workflow === 'local') {
+                    result = await generarImagenLocal(message.prompt, params);
+                } else if (workflow === 'zimage') {
+                    result = await generarImagenZImage(message.prompt, params);
+                } else {
+                    result = await generarImagen(message.prompt, params);
+                }
+
+                const promptId = result.promptId;
+                // Guarda prompt, websocket y el nodo de salida final (para filtrar salidas intermedias)
+                promptDetails[promptId] = { prompt: message.prompt, ws: ws, outputNode: result.outputNode, polled: !!result.polled };
+
+                // Red de seguridad: si el flujo lo pide (result.polled), detectamos el fin
+                // por HTTP /history en vez de por WS. Robusto ante caidas del WS del tunel.
+                if (result.polled) {
+                    pollHistoryAndEmit(promptId, ws, result.outputNode, message.prompt);
+                }
                 
                 console.log(`✓ Prompt queued with ID: ${promptId}`);
                 console.log(`🔍 WebSocket ComfyUI state: ${wsComfy ? wsComfy.readyState : 'null'} (1=OPEN, 0=CONNECTING, 2=CLOSING, 3=CLOSED)`);
@@ -295,6 +348,30 @@ io.on('connection', function(socket) {
 // API endpoints para configuración
 app.get(BASE_PATH + '/api/config', (req, res) => {
     res.json(config);
+});
+
+// Ping HTTP real al ComfyUI configurado (via /system_stats). Confiable a traves del
+// tunel (a diferencia del WebSocket, que los tuneles free suelen cortar). El frontend
+// lo polea para mantener el indicador "vivo/caido" honesto y la URL siempre al dia.
+app.get(BASE_PATH + '/api/ping', (req, res) => {
+    let done = false;
+    const finish = (alive, info) => { if (done) return; done = true; res.json({ alive, url: config.comfyUrl, info: info || null }); };
+    try {
+        const parsed = parseComfyUrl(config.comfyUrl);
+        const httpModule = getHttpModule(config.comfyUrl);
+        const r = httpModule.request({ hostname: parsed.hostname, port: parsed.port, path: '/system_stats', method: 'GET' }, (resp) => {
+            let data = '';
+            resp.on('data', c => data += c);
+            resp.on('end', () => {
+                let ok = false, ver = null;
+                try { const j = JSON.parse(data); ok = !!(j && j.system); ver = j.system && j.system.comfyui_version; } catch (e) {}
+                finish(ok && resp.statusCode === 200, ver);
+            });
+        });
+        r.setTimeout(12000, () => { r.destroy(); finish(false); });
+        r.on('error', () => finish(false));
+        r.end();
+    } catch (e) { finish(false); }
 });
 
 // Endpoint para obtener modelos disponibles
@@ -341,6 +418,79 @@ app.get(BASE_PATH + '/api/models', async (req, res) => {
     }
 });
 
+// Helper: trae /object_info de ComfyUI como objeto
+function fetchObjectInfo() {
+    return new Promise((resolve, reject) => {
+        const parsedUrl = parseComfyUrl(config.comfyUrl);
+        const httpModule = getHttpModule(config.comfyUrl);
+        const options = {
+            hostname: parsedUrl.hostname,
+            port: parsedUrl.port,
+            path: '/object_info',
+            method: 'GET'
+        };
+        const request = httpModule.request(options, (response) => {
+            let data = '';
+            response.on('data', (chunk) => { data += chunk; });
+            response.on('end', () => {
+                try { resolve(JSON.parse(data)); }
+                catch (e) { reject(e); }
+            });
+        });
+        request.on('error', reject);
+        request.end();
+    });
+}
+
+// Helper: extrae la lista de archivos de un loader de forma defensiva
+function extractList(objectInfo, nodeClass, field) {
+    try {
+        const node = objectInfo[nodeClass];
+        const req = node && node.input && (node.input.required || {});
+        const opt = node && node.input && (node.input.optional || {});
+        const entry = (req && req[field]) || (opt && opt[field]);
+        if (entry && Array.isArray(entry[0])) return entry[0];
+    } catch (e) { /* nodo no instalado */ }
+    return [];
+}
+
+// Endpoint: devuelve todas las listas de modelos para los dropdowns de DIPLO
+app.get(BASE_PATH + '/api/object-info', async (req, res) => {
+    try {
+        const oi = await fetchObjectInfo();
+        res.json({
+            success: true,
+            options: {
+                ckpt_name:         extractList(oi, 'CheckpointLoaderSimple', 'ckpt_name'),
+                unet_name:         extractList(oi, 'UNETLoader', 'unet_name'),
+                vae_name:          extractList(oi, 'VAELoader', 'vae_name'),
+                // El CLIP es .safetensors -> CLIPLoader core (no GGUF). Fallback a GGUF por compat.
+                clip_name:         extractList(oi, 'CLIPLoader', 'clip_name').length
+                                     ? extractList(oi, 'CLIPLoader', 'clip_name')
+                                     : extractList(oi, 'CLIPLoaderGGUF', 'clip_name'),
+                lora_name:         extractList(oi, 'LoraLoader', 'lora_name'),
+                upscale_model_name: extractList(oi, 'UpscaleModelLoader', 'model_name'),
+                model_patch_name:  extractList(oi, 'ModelPatchLoader', 'model_patch_name'),
+                // Listas para los selects de sampler/scheduler (del KSampler core)
+                sampler_name:      extractList(oi, 'KSampler', 'sampler_name'),
+                scheduler:         extractList(oi, 'KSampler', 'scheduler')
+            }
+        });
+    } catch (error) {
+        res.json({ success: false, error: error.message });
+    }
+});
+
+// Endpoint para listar workflows disponibles
+app.get(BASE_PATH + '/api/workflows', (req, res) => {
+    const workflows = Object.entries(WORKFLOWS).map(([key, wf]) => ({
+        id: key,
+        name: wf.name,
+        description: wf.description
+    }));
+    res.json({ success: true, workflows });
+});
+
 app.post(BASE_PATH + '/api/config', (req, res) => {
     const newConfig = req.body;
     if (!newConfig.comfyUrl) {
@@ -361,6 +511,75 @@ async function readWorkflowAPI() {
     const data = await fs.promises.readFile(path.join(__dirname, 'workflow_api.json'), 'utf8');
     return JSON.parse(data);
 }
+
+async function readWorkflowDiplo() {
+    const data = await fs.promises.readFile(path.join(__dirname, 'workflow_diplo.json'), 'utf8');
+    return JSON.parse(data);
+}
+
+async function readWorkflowLocal() {
+    const data = await fs.promises.readFile(path.join(__dirname, 'workflow_local.json'), 'utf8');
+    return JSON.parse(data);
+}
+
+async function readWorkflowZImage() {
+    const data = await fs.promises.readFile(path.join(__dirname, 'workflow_zimage.json'), 'utf8');
+    return JSON.parse(data);
+}
+
+async function readWorkflowDiploColab() {
+    const data = await fs.promises.readFile(path.join(__dirname, 'workflow_diplo_colab.json'), 'utf8');
+    return JSON.parse(data);
+}
+
+// Helper defensivo: setea un input SOLO si el nodo existe en el workflow.
+// Evita el crash "Cannot set properties of undefined" cuando un workflow
+// no tiene cierto nodo (p.ej. la version Colab sin LoRA/ControlNet).
+function setIn(wf, id, key, val) {
+    if (wf[id] && wf[id].inputs) wf[id].inputs[key] = val;
+}
+
+// Lista de workflows disponibles con sus parametros
+const WORKFLOWS = {
+    simple: {
+        file: 'workflow_api.json',
+        name: 'Simple txt2img',
+        description: 'Generacion basica texto-a-imagen con KSampler',
+        readFn: readWorkflowAPI
+    },
+    diplo: {
+        file: 'workflow_diplo.json',
+        name: 'DIPLO LowPoly + Tiled Upscale',
+        description: 'Z-Image-Turbo + LoRA LowPoly + ControlNet + Tile Refine + Upscale',
+        readFn: readWorkflowDiplo
+    },
+    // Modo LOCAL: Z-Image Turbo GGUF Q5 (validado en GPU AMD/ZLUDA). txt2img puro,
+    // sin LoRA/ControlNet/tile. Usa los mismos campos que 'simple' (prompt/steps/dims/seed).
+    local: {
+        file: 'workflow_local.json',
+        name: 'Z-Image GGUF (local AMD/ZLUDA)',
+        description: 'Z-Image-Turbo Q5 GGUF, txt2img directo — corre en la GPU local',
+        readFn: readWorkflowLocal
+    },
+    // Modo ZIMAGE: Z-Image Turbo fp8 en Colab/NVIDIA. Solo nodos core + modelos
+    // presentes en el Colab (validado 2026-06-19). Usa campos del panel 'simple'.
+    zimage: {
+        file: 'workflow_zimage.json',
+        name: 'Z-Image (Colab)',
+        description: 'Z-Image-Turbo fp8 en Colab — txt2img directo, sin custom nodes',
+        readFn: readWorkflowZImage
+    },
+    // Modo DIPLO-COLAB: Z-Image Turbo fp8 + upscale 2x (AnimeSharp), validado
+    // end-to-end en Colab/NVIDIA (2026-06-25). Ruta robusta sin LoRA/ControlNet/tile
+    // (esos assets no estan en este Colab; el estilo lowpoly ya sale del modelo+prompt).
+    // Salida final = nodo 86 (upscale). Expone todos los params aplicables.
+    diplocolab: {
+        file: 'workflow_diplo_colab.json',
+        name: 'DIPLO Colab (Z-Image + Upscale 2x)',
+        description: 'Z-Image-Turbo fp8 + upscale 2x AnimeSharp — corre en Colab, alta resolucion',
+        readFn: readWorkflowDiploColab
+    }
+};
 
 async function uploadImage(filePath) {
     const formData = new FormData();
@@ -440,6 +659,63 @@ async function getHistory(promptId) {
     });
 }
 
+// Red de seguridad por HTTP: cuando el WS a ComfyUI se cae (los tuneles free son
+// inestables con WebSocket), poleamos /history hasta que el prompt termine, bajamos
+// la imagen del nodo de salida y la emitimos con el MISMO mensaje 'image_generated'
+// que escucha el frontend. Funciona aunque el WS de ComfyUI este muerto.
+async function pollHistoryAndEmit(promptId, ws, outputNode, promptText) {
+    const intervalMs = 5000;
+    const maxTries = 150; // ~12.5 min (cubre cold-start)
+    const sendSafe = (obj) => { try { if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj)); } catch (e) {} };
+
+    for (let i = 0; i < maxTries; i++) {
+        await new Promise(r => setTimeout(r, intervalMs));
+        let hist;
+        try { hist = await getHistory(promptId); } catch (e) { continue; }
+        const entry = hist && hist[promptId];
+        if (!entry) continue;
+
+        const status = entry.status || {};
+        const outputs = entry.outputs || {};
+
+        // Imagenes del nodo de salida preferido; si no, el primer nodo que tenga.
+        let imgs = (outputs[outputNode] && outputs[outputNode].images) || null;
+        if (!imgs) {
+            for (const k of Object.keys(outputs)) {
+                if (outputs[k].images && outputs[k].images.length) { imgs = outputs[k].images; break; }
+            }
+        }
+
+        if ((status.completed || status.status_str === 'success') && imgs && imgs.length) {
+            const image = imgs[imgs.length - 1]; // ultima = mayor resolucion (upscale)
+            const parsed = parseComfyUrl(config.comfyUrl);
+            const subfolder = image.subfolder || '';
+            const srcUrl = `${parsed.baseUrl}/view?filename=${encodeURIComponent(image.filename)}&subfolder=${encodeURIComponent(subfolder)}&type=${encodeURIComponent(image.type)}`;
+            const filename = path.join(__dirname, 'public', 'imagenes', image.filename);
+            sendSafe({ type: 'generation_status', status: 'downloading', message: '📥 Descargando imagen desde Colab...' });
+            try {
+                await downloadImage(srcUrl, filename, '');
+            } catch (e) {
+                console.error('[poll] error bajando imagen:', e.message);
+                sendSafe({ type: 'generation_status', status: 'error', message: '❌ Error bajando la imagen: ' + e.message });
+                return;
+            }
+            const outUrl = `${IMAGE_BASE_URL}/imagenes/${image.filename}`;
+            sendSafe({ type: 'image_generated', url: outUrl, prompt: promptText });
+            console.log(`📤 [poll] Imagen emitida al cliente: ${outUrl}`);
+            return;
+        }
+
+        if (status.status_str === 'error') {
+            console.error('[poll] ComfyUI reporto error para', promptId);
+            sendSafe({ type: 'generation_status', status: 'error', message: '❌ ComfyUI reporto un error en la generacion' });
+            return;
+        }
+    }
+    console.warn('[poll] timeout esperando', promptId);
+    sendSafe({ type: 'generation_status', status: 'error', message: '⌛ Timeout esperando la imagen de Colab' });
+}
+
 async function downloadImage(url, filename, subfolder) {
     return new Promise((resolve, reject) => {
         const dir = path.dirname(filename);
@@ -462,17 +738,99 @@ async function downloadImage(url, filename, subfolder) {
         });
     });
 }
-async function generarImagen_old(promptText) {
-    const promptWorkflow = await readWorkflowAPI();
-	console.log("PROMPT WORKFLOW" + promptWorkflow)
-    promptWorkflow["6"]["inputs"]["text"] = promptText;
-    promptWorkflow["3"]["inputs"]["seed"] = Math.floor(Math.random() * 18446744073709551614) + 1;
-    const emptyLatentImgNode = promptWorkflow["5"];
-    emptyLatentImgNode["inputs"]["batch_size"] = 1;
+// ============================================================
+//  PROVEEDOR SERVERLESS: fal.ai (Z-Image Turbo)
+//  No usa GPU local ni ComfyUI. Llama al API de fal, descarga
+//  la imagen y la emite con el MISMO mensaje 'image_generated'
+//  que ya escucha el frontend.
+// ============================================================
 
-    promptWorkflow["9"]["inputs"]["filename_prefix"] = "ComfyUI";
+// POST sincronico al API de fal. Devuelve el JSON de resultado.
+function falGenerate(input) {
+    return new Promise((resolve, reject) => {
+        const FAL_KEY = process.env.FAL_KEY || '';
+        if (!FAL_KEY) {
+            return reject(new Error('Falta FAL_KEY. Conseguí una en https://fal.ai/dashboard/keys y ponela en el launcher comfyfal.bat'));
+        }
+        const model = process.env.FAL_MODEL || config.falModel || 'fal-ai/z-image/turbo';
+        const body = JSON.stringify(input);
+        const options = {
+            hostname: 'fal.run',
+            path: '/' + model,
+            method: 'POST',
+            headers: {
+                'Authorization': 'Key ' + FAL_KEY,
+                'Content-Type': 'application/json',
+                'Content-Length': Buffer.byteLength(body)
+            }
+        };
+        const req = https.request(options, (res) => {
+            let data = '';
+            res.on('data', (c) => data += c);
+            res.on('end', () => {
+                if (res.statusCode >= 200 && res.statusCode < 300) {
+                    try { resolve(JSON.parse(data)); }
+                    catch (e) { reject(new Error('Respuesta de fal no es JSON: ' + data.slice(0, 200))); }
+                } else {
+                    reject(new Error(`fal HTTP ${res.statusCode}: ${data.slice(0, 300)}`));
+                }
+            });
+        });
+        req.on('error', reject);
+        req.write(body);
+        req.end();
+    });
+}
 
-    const promptId = await queuePrompt(promptWorkflow);
+// Orquesta una generacion via fal y emite el resultado al cliente.
+async function generarImagenFal(promptText, params = {}, ws) {
+    const width = params.width || 1024;
+    const height = params.height || 640;
+    const steps = params.steps || 8;
+
+    const input = {
+        prompt: promptText,
+        image_size: { width, height },
+        num_inference_steps: steps,
+        num_images: 1,
+        output_format: 'png',
+        enable_safety_checker: false
+    };
+    if (params.seed) input.seed = Number(params.seed);
+
+    console.log(`🎨 [fal] Generando:`, { promptText: promptText.slice(0, 60) + '...', width, height, steps, seed: input.seed });
+
+    ws.send(JSON.stringify({
+        type: 'generation_status',
+        status: 'processing',
+        message: '⚙️ Generando en fal.ai (Z-Image Turbo)...'
+    }));
+
+    const result = await falGenerate(input);
+    const img = result && result.images && result.images[0];
+    if (!img || !img.url) {
+        throw new Error('fal no devolvió ninguna imagen: ' + JSON.stringify(result).slice(0, 200));
+    }
+
+    ws.send(JSON.stringify({
+        type: 'generation_status',
+        status: 'downloading',
+        message: '📥 Descargando imagen de fal...'
+    }));
+
+    // Nombre de archivo unico (no hay filename de ComfyUI).
+    const fname = `fal_${Date.now()}_${Math.floor(Math.random() * 1e6)}.png`;
+    const filename = path.join(__dirname, 'public', 'imagenes', fname);
+    await downloadImage(img.url, filename, '');
+    console.log(`✓ [fal] Imagen descargada: ${filename}`);
+
+    const imageUrl = `${IMAGE_BASE_URL}/imagenes/${fname}`;
+    ws.send(JSON.stringify({
+        type: 'image_generated',
+        url: imageUrl,
+        prompt: promptText
+    }));
+    console.log(`📤 [fal] URL enviada al cliente: ${imageUrl}`);
 }
 
 // Función para validar si un modelo existe
@@ -565,6 +923,7 @@ async function generarImagen(promptText, params = {}) {
     
     // Configurar parámetros del workflow
     promptWorkflow["6"]["inputs"]["text"] = promptText;
+    promptWorkflow["7"]["inputs"]["text"] = params.negative_prompt || "text, watermark";
     promptWorkflow["3"]["inputs"]["seed"] = seed;
     promptWorkflow["3"]["inputs"]["steps"] = steps;
     promptWorkflow["5"]["inputs"]["width"] = width;
@@ -575,5 +934,307 @@ async function generarImagen(promptText, params = {}) {
     const promptId = await queuePrompt(promptWorkflow);
 
     console.log(`✓ Prompt en cola con ID: ${promptId}`);
-    return promptId;
+    // outputNode: nodo SaveImage final, para filtrar el resto de salidas (PreviewImage, etc.)
+    return { promptId, outputNode: "9" };
+}
+
+// Workflow LOCAL: Z-Image Turbo GGUF Q5 (txt2img puro en GPU AMD/ZLUDA).
+// Nodos: 3=KSampler, 6=prompt+, 7=prompt-, 13=EmptySD3LatentImage, 9=SaveImage.
+async function generarImagenLocal(promptText, params = {}) {
+    const promptWorkflow = await readWorkflowLocal();
+
+    const steps = params.steps || 8;
+    const width = params.width || 1024;
+    const height = params.height || 640;
+    const seed = params.seed || Math.floor(Math.random() * 18446744073709551614) + 1;
+
+    console.log(`🎨 [LOCAL] Z-Image GGUF:`, { prompt: promptText.substring(0, 60) + '...', steps, width, height, seed });
+
+    // Prompts
+    promptWorkflow["6"]["inputs"]["text"] = promptText;
+    promptWorkflow["7"]["inputs"]["text"] = params.negative_prompt || "blurry, ugly, low quality, text, watermark";
+    // KSampler
+    promptWorkflow["3"]["inputs"]["seed"] = seed;
+    promptWorkflow["3"]["inputs"]["steps"] = steps;
+    // Dimensiones
+    promptWorkflow["13"]["inputs"]["width"] = width;
+    promptWorkflow["13"]["inputs"]["height"] = height;
+    promptWorkflow["13"]["inputs"]["batch_size"] = 1;
+
+    const promptId = await queuePrompt(promptWorkflow);
+    console.log(`✓ [LOCAL] Prompt en cola con ID: ${promptId}`);
+    return { promptId, outputNode: "9" };
+}
+
+// Workflow ZIMAGE: Z-Image Turbo en Colab/NVIDIA (txt2img puro, fp8).
+// Usa SOLO nodos core + los modelos que SI estan en el Colab (validado 2026-06-19):
+// UNETLoader(10) -> CLIPLoader lumina2(11) -> CLIPTextEncode(6/7) -> EmptySD3LatentImage(13)
+// -> KSampler(3) -> VAEDecode(8) -> SaveImage(9). Sin LoRA/ControlNet/tile (esos faltan en Colab).
+async function generarImagenZImage(promptText, params = {}) {
+    const promptWorkflow = await readWorkflowZImage();
+
+    const steps = params.steps || 8;
+    const width = params.width || 1024;
+    const height = params.height || 640;
+    const cfg = params.cfg || 1.0;
+    const sampler_name = params.sampler_name || "euler";
+    const scheduler = params.scheduler || "simple";
+    const seed = params.seed || Math.floor(Math.random() * 18446744073709551614) + 1;
+    // Modelos (defaults = nombres reales del Colab; overridables desde la UI avanzada)
+    const unet_name = params.unet_name || "z_image_turbo_fp8_e4m3fn.safetensors.safetensors";
+    const weight_dtype = params.weight_dtype || "fp8_e4m3fn";
+    const clip_name = params.clip_name || "qwen_3_4b.safetensors.safetensors";
+    const clip_type = params.clip_type || "lumina2";
+    const vae_name = params.vae_name || "ultrafluxVAEImproved_v10.safetensors";
+
+    console.log(`🎨 [ZIMAGE] Z-Image Colab:`, { prompt: promptText.substring(0, 60) + '...', steps, width, height, seed });
+
+    promptWorkflow["6"]["inputs"]["text"] = promptText;
+    promptWorkflow["7"]["inputs"]["text"] = params.negative_prompt || "blurry, ugly, low quality, text, watermark";
+    promptWorkflow["3"]["inputs"]["seed"] = seed;
+    promptWorkflow["3"]["inputs"]["steps"] = steps;
+    promptWorkflow["3"]["inputs"]["cfg"] = cfg;
+    promptWorkflow["3"]["inputs"]["sampler_name"] = sampler_name;
+    promptWorkflow["3"]["inputs"]["scheduler"] = scheduler;
+    promptWorkflow["13"]["inputs"]["width"] = width;
+    promptWorkflow["13"]["inputs"]["height"] = height;
+    promptWorkflow["13"]["inputs"]["batch_size"] = 1;
+    promptWorkflow["10"]["inputs"]["unet_name"] = unet_name;
+    promptWorkflow["10"]["inputs"]["weight_dtype"] = weight_dtype;
+    promptWorkflow["11"]["inputs"]["clip_name"] = clip_name;
+    promptWorkflow["11"]["inputs"]["type"] = clip_type;
+    promptWorkflow["12"]["inputs"]["vae_name"] = vae_name;
+
+    const promptId = await queuePrompt(promptWorkflow);
+    console.log(`✓ [ZIMAGE] Prompt en cola con ID: ${promptId}`);
+    return { promptId, outputNode: "9" };
+}
+
+// Workflow DIPLO-COLAB: Z-Image Turbo fp8 + upscale 2x (validado en Colab 2026-06-25).
+// Ruta robusta sin LoRA/ControlNet/tile. Usa setIn() defensivo: si el nodo no existe
+// se ignora, asi el mismo codigo sirve aunque cambie el workflow.
+// Salida final = nodo 86 (upscale). Nodos: 16/28/17 loaders, 6/7 prompts, 13 latent,
+// 3 KSampler, 92 VAEDecode++, 9 SaveImage base, 85/84 upscale, 86 SaveImage final.
+async function generarImagenDiploColab(promptText, params = {}) {
+    const wf = await readWorkflowDiploColab();
+
+    const seed = params.seed || Math.floor(Math.random() * 18446744073709551614) + 1;
+    const steps = params.steps || 8;
+    const cfg = params.cfg ?? 1.0;
+    const sampler_name = params.sampler_name || "euler";
+    const scheduler = params.scheduler || "simple";
+    const denoise = params.denoise ?? 0.55;
+    const width = params.width || 1024;
+    const height = params.height || 640;
+    const batch_size = params.batch_size || 1;
+    // Modelos (defaults = nombres reales del Colab; overridables desde la UI)
+    const unet_name = params.unet_name || "z_image_turbo_fp8_e4m3fn.safetensors.safetensors";
+    const weight_dtype = params.weight_dtype || "fp8_e4m3fn";
+    const vae_name = params.vae_name || "ultrafluxVAEImproved_v10.safetensors";
+    const clip_name = params.clip_name || "qwen_3_4b.safetensors.safetensors";
+    const clip_type = params.clip_type || "lumina2";
+    const upscale_model_name = params.upscale_model_name || "2x-AnimeSharpV4_RCAN.safetensors";
+
+    setIn(wf, "6", "text", promptText);
+    setIn(wf, "7", "text", params.negative_prompt || "blurry, ugly, low quality, deformed hands, extra limbs, text, watermark");
+    setIn(wf, "3", "seed", seed);
+    setIn(wf, "3", "steps", steps);
+    setIn(wf, "3", "cfg", cfg);
+    setIn(wf, "3", "sampler_name", sampler_name);
+    setIn(wf, "3", "scheduler", scheduler);
+    setIn(wf, "3", "denoise", denoise);
+    setIn(wf, "13", "width", width);
+    setIn(wf, "13", "height", height);
+    setIn(wf, "13", "batch_size", batch_size);
+    setIn(wf, "16", "unet_name", unet_name);
+    setIn(wf, "16", "weight_dtype", weight_dtype);
+    setIn(wf, "17", "vae_name", vae_name);
+    setIn(wf, "28", "clip_name", clip_name);
+    setIn(wf, "28", "type", clip_type);
+    setIn(wf, "85", "model_name", upscale_model_name);
+
+    console.log(`🎨 [DIPLO-COLAB] Generando:`, {
+        prompt: promptText.substring(0, 60) + '...', seed, steps, cfg, sampler_name, scheduler, width, height
+    });
+
+    const promptId = await queuePrompt(wf);
+    console.log(`✓ [DIPLO-COLAB] Prompt en cola con ID: ${promptId}`);
+    // polled: true -> el server detecta el fin por HTTP /history (robusto ante WS caido)
+    return { promptId, outputNode: "86", polled: true };
+}
+
+// Funcion especifica para el workflow DIPLO
+// Expone TODAS las variables modificables de los nodos criticos
+async function generarImagenDiplo(promptText, params = {}) {
+    const promptWorkflow = await readWorkflowDiplo();
+    
+    // ── KSampler (nodo 3) ──
+    const seed = params.seed || Math.floor(Math.random() * 18446744073709551614) + 1;
+    const steps = params.steps || 8;
+    const cfg = params.cfg || 1.0;
+    const sampler_name = params.sampler_name || "euler";
+    const scheduler = params.scheduler || "simple";
+    const denoise = params.denoise || 0.55;
+    
+    // ── EmptySD3LatentImage (nodo 13) ──
+    const width = params.width || 1024;
+    const height = params.height || 640;
+    const batch_size = params.batch_size || 1;
+    
+    // ── Modelos (nodos 16, 17, 28, 85, 76) ──
+    const unet_name = params.unet_name || "z_image_turbo_fp8_e4m3fn.safetensors.safetensors";
+    const weight_dtype = params.weight_dtype || "fp8_e4m3fn";
+    const vae_name = params.vae_name || "ultrafluxVAEImproved_v10.safetensors";
+    const clip_name = params.clip_name || "qwen_3_4b.safetensors.safetensors";
+    const clip_type = params.clip_type || "lumina2";
+    const upscale_model_name = params.upscale_model_name || "2x-AnimeSharpV4_RCAN.safetensors";
+    const model_patch_name = params.model_patch_name || "Z-Image-Turbo-Fun-Controlnet-Union.safetensors";
+    
+    // ── LoRA (nodo 90) ──
+    const lora_name = params.lora_name || "Bradhamel_art_style.safetensors";
+    const lora_strength_model = params.lora_strength_model || 0.80;
+    const lora_strength_clip = params.lora_strength_clip || 1.00;
+    
+    // ── LoadImage referencia (nodo 61) ──
+    const ref_image = params.ref_image || "DSC09211 (2).jpg";
+    
+    // ── ImageScaleBy (nodo 89) ──
+    const scale_method = params.scale_method || "nearest-exact";
+    const scale_by = params.scale_by || 0.19;
+    
+    // ── AIO_Preprocessor / ControlNet (nodos 80, 75) ──
+    const preprocessor = params.preprocessor || "CannyEdgePreprocessor";
+    const preprocessor_low = params.preprocessor_low || 100;
+    const preprocessor_high = params.preprocessor_high || 200;
+    const preprocessor_resolution = params.preprocessor_resolution || 512;
+    const controlnet_strength = params.controlnet_strength || 0.90;
+    
+    // ── KSamplerSelect (nodo 39) ──
+    const tile_sampler = params.tile_sampler || "euler";
+    
+    // ── BasicScheduler tile refine (nodo 56) ──
+    const tile_scheduler = params.tile_scheduler || "simple";
+    const tile_steps = params.tile_steps || 10;
+    const tile_denoise = params.tile_denoise || 0.2;
+    
+    // ── TTP_Tile_image_size (nodo 49) ──
+    const tile_cols = params.tile_cols || 3;
+    const tile_rows = params.tile_rows || 3;
+    const tile_overlap = params.tile_overlap ?? 0.05;
+    
+    // ── VAEDecodeTiled (nodo 46) ──
+    const decode_tile_size = params.decode_tile_size || 2048;
+    
+    // ── Image Resize post-upscale (nodo 87) ──
+    const upscale_width = params.upscale_width || 1128;
+    const upscale_height = params.upscale_height || 672;
+    const upscale_resize_mode = params.upscale_resize_mode || "crop";
+    const upscale_resize_method = params.upscale_resize_method || "nearest-exact";
+    
+    // ── ImageScaleToTotalPixels (nodo 43) ──
+    const scale_to_megapixels = params.scale_to_megapixels || 4;
+    const scale_to_method = params.scale_to_method || "lanczos";
+    
+    // ── VAEDecodePlusPlus (nodo 92) ──
+    const vae_decode_mode = params.vae_decode_mode || "tiled";
+    const vae_decode_tile = params.vae_decode_tile || 512;
+    
+    console.log(`🎨 [DIPLO] Generando con:`, {
+        prompt: promptText.substring(0,60)+'...', seed, steps, cfg, sampler_name, scheduler, denoise,
+        width, height, lora_name, lora_strength_model, controlnet_strength,
+        preprocessor, scale_by, tile_steps, tile_denoise, upscale_width, upscale_height
+    });
+    
+    // ── Aplicar parametros al workflow ──
+    
+    // KSampler base (nodo 3)
+    promptWorkflow["3"]["inputs"]["seed"] = seed;
+    promptWorkflow["3"]["inputs"]["steps"] = steps;
+    promptWorkflow["3"]["inputs"]["cfg"] = cfg;
+    promptWorkflow["3"]["inputs"]["sampler_name"] = sampler_name;
+    promptWorkflow["3"]["inputs"]["scheduler"] = scheduler;
+    promptWorkflow["3"]["inputs"]["denoise"] = denoise;
+    
+    // Prompts
+    promptWorkflow["6"]["inputs"]["text"] = promptText;
+    promptWorkflow["7"]["inputs"]["text"] = params.negative_prompt || "blurry, ugly, low quality, deformed hands, extra limbs, text, watermark";
+    promptWorkflow["47"]["inputs"]["text"] = params.tile_prompt || promptText;
+    
+    // Dimensiones
+    promptWorkflow["13"]["inputs"]["width"] = width;
+    promptWorkflow["13"]["inputs"]["height"] = height;
+    promptWorkflow["13"]["inputs"]["batch_size"] = batch_size;
+    
+    // Modelos
+    promptWorkflow["16"]["inputs"]["unet_name"] = unet_name;
+    promptWorkflow["16"]["inputs"]["weight_dtype"] = weight_dtype;
+    promptWorkflow["17"]["inputs"]["vae_name"] = vae_name;
+    promptWorkflow["28"]["inputs"]["clip_name"] = clip_name;
+    promptWorkflow["28"]["inputs"]["type"] = clip_type;
+    promptWorkflow["85"]["inputs"]["model_name"] = upscale_model_name;
+    promptWorkflow["76"]["inputs"]["model_patch_name"] = model_patch_name;
+    
+    // LoRA
+    promptWorkflow["90"]["inputs"]["lora_name"] = lora_name;
+    promptWorkflow["90"]["inputs"]["strength_model"] = lora_strength_model;
+    promptWorkflow["90"]["inputs"]["strength_clip"] = lora_strength_clip;
+    
+    // Imagen de referencia
+    promptWorkflow["61"]["inputs"]["image"] = ref_image;
+    
+    // ImageScaleBy
+    promptWorkflow["89"]["inputs"]["upscale_method"] = scale_method;
+    promptWorkflow["89"]["inputs"]["scale_by"] = scale_by;
+    
+    // AIO_Preprocessor + ControlNet
+    promptWorkflow["80"]["inputs"]["preprocessor"] = preprocessor;
+    promptWorkflow["80"]["inputs"]["low_threshold"] = preprocessor_low;
+    promptWorkflow["80"]["inputs"]["high_threshold"] = preprocessor_high;
+    promptWorkflow["80"]["inputs"]["resolution"] = preprocessor_resolution;
+    promptWorkflow["75"]["inputs"]["strength"] = controlnet_strength;
+    
+    // KSamplerSelect (tile refine)
+    promptWorkflow["39"]["inputs"]["sampler_name"] = tile_sampler;
+    
+    // BasicScheduler tile refine
+    promptWorkflow["56"]["inputs"]["scheduler"] = tile_scheduler;
+    promptWorkflow["56"]["inputs"]["steps"] = tile_steps;
+    promptWorkflow["56"]["inputs"]["denoise"] = tile_denoise;
+    
+    // Tile config
+    promptWorkflow["49"]["inputs"]["cols"] = tile_cols;
+    promptWorkflow["49"]["inputs"]["rows"] = tile_rows;
+    promptWorkflow["49"]["inputs"]["overlap"] = tile_overlap;
+    
+    // VAEDecodeTiled
+    promptWorkflow["46"]["inputs"]["tile_size"] = decode_tile_size;
+    
+    // Image Resize post-upscale
+    promptWorkflow["87"]["inputs"]["width"] = upscale_width;
+    promptWorkflow["87"]["inputs"]["height"] = upscale_height;
+    promptWorkflow["87"]["inputs"]["resize_mode"] = upscale_resize_mode;
+    promptWorkflow["87"]["inputs"]["method"] = upscale_resize_method;
+    
+    // ImageScaleToTotalPixels
+    promptWorkflow["43"]["inputs"]["megapixels"] = scale_to_megapixels;
+    promptWorkflow["43"]["inputs"]["upscale_method"] = scale_to_method;
+    
+    // VAEDecodePlusPlus
+    promptWorkflow["92"]["inputs"]["mode"] = vae_decode_mode;
+    promptWorkflow["92"]["inputs"]["tile_size"] = vae_decode_tile;
+    
+    // RandomNoise seed (nodo 40) - siempre random para variedad
+    promptWorkflow["40"]["inputs"]["noise_seed"] = Math.floor(Math.random() * 18446744073709551614) + 1;
+    
+    // Ajustar dimensiones del tile para que sean proporcionales al upscale
+    const tileW = Math.min(1024, Math.ceil(upscale_width / tile_cols));
+    const tileH = Math.min(1024, Math.ceil(upscale_height / tile_rows));
+    promptWorkflow["50"]["inputs"]["tile_width"] = tileW;
+    promptWorkflow["50"]["inputs"]["tile_height"] = tileH;
+
+    const promptId = await queuePrompt(promptWorkflow);
+    console.log(`✓ [DIPLO] Prompt en cola con ID: ${promptId}`);
+    // outputNode: nodo 30 = SaveImage de la rama tiled (salida final de mayor resolucion).
+    // Filtra las salidas intermedias (9 = base, 86 = upscale sin tile) para no parpadear.
+    return { promptId, outputNode: "30" };
 }

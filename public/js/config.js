@@ -66,8 +66,8 @@ async function saveConfig() {
             Logger.info('✓ Configuración guardada exitosamente');
             Logger.info('El servidor se está reconectando a ComfyUI...');
             document.getElementById('currentUrl').textContent = `URL actual: ${comfyUrl}`;
-            
-            // No recargar la página, el servidor enviará el estado de conexión
+            // Verificar por HTTP si la URL nueva responde (no esperar al WS)
+            setTimeout(pingConnection, 1500);
         } else {
             Logger.error('Error al guardar: ' + (result.error || 'Unknown error'));
             alert('Error al guardar configuración: ' + (result.error || 'Unknown error'));
@@ -85,14 +85,13 @@ function setLocalhost() {
     document.getElementById('comfyUrl').value = 'http://localhost:8188';
 }
 
-// Preset para Colab (el usuario debe pegar su URL de Cloudflare)
+// Preset para Colab: NO hardcodea ninguna URL (cambian en cada reinicio del tunel).
+// Deja la URL guardada actual y la selecciona para reemplazarla fácil pegando la nueva.
 function setColab() {
     const urlInput = document.getElementById('comfyUrl');
-    urlInput.value = 'https://investing-paintings-reached-trim.trycloudflare.com/';
-    urlInput.placeholder = 'URL de Cloudflare Tunnel';
+    urlInput.placeholder = 'Pegá la URL *.trycloudflare.com del Colab';
     urlInput.focus();
-    // Seleccionar todo el texto para que sea fácil reemplazarlo
-    urlInput.select();
+    urlInput.select(); // selecciona lo que haya para sobrescribir pegando
 }
 
 // Actualizar indicador de estado
@@ -107,5 +106,34 @@ function updateStatusIndicator(connected) {
     }
 }
 
-// Cargar configuración al cargar la página
-document.addEventListener('DOMContentLoaded', loadConfig);
+// Ping HTTP al backend (via /api/ping del server) para reflejar si el Colab esta VIVO,
+// independiente del WebSocket (que los tuneles free cortan). Mantiene el indicador y la
+// linea "URL actual" siempre al dia. Se llama al cargar, al guardar y cada 15s.
+async function pingConnection() {
+    const txt = document.getElementById('currentUrl');
+    try {
+        const r = await fetch(apiUrl('/api/ping'));
+        const d = await r.json();
+        updateStatusIndicator(d.alive);
+        const statusText = document.getElementById('statusText');
+        if (d.alive) {
+            if (statusText) statusText.textContent = 'Colab vivo';
+            if (txt) txt.textContent = `✅ URL actual (viva): ${d.url}` + (d.info ? `  ·  ComfyUI ${d.info}` : '');
+        } else {
+            if (statusText) statusText.textContent = 'Sin respuesta';
+            if (txt) txt.textContent = `⚠️ URL actual NO responde: ${d.url} — pegá la URL nueva del Colab y Guardá`;
+        }
+        return d.alive;
+    } catch (e) {
+        updateStatusIndicator(false);
+        if (txt) txt.textContent = '⚠️ No se pudo verificar la conexión';
+        return false;
+    }
+}
+
+// Cargar configuración al cargar la página + arrancar el ping periódico
+document.addEventListener('DOMContentLoaded', () => {
+    loadConfig();
+    pingConnection();
+    setInterval(pingConnection, 15000);
+});

@@ -1,236 +1,309 @@
-// TouchDesigner WebSocket - Solo funciona en desarrollo local
-// var host = '192.168.0.13:8080';
-// socket = new WebSocket('ws://' + host);
+// Current workflow selection
+let currentWorkflow = 'diplocolab';
 
+// Workflows que usan el panel rico de parametros del DIPLO (todos los controles)
+const DIPLO_LIKE = ['diplo', 'diplocolab'];
+
+// Muestra/oculta elementos con [data-modes] segun el workflow activo.
+// Un elemento con data-modes="diplo" solo se ve si currentWorkflow === 'diplo'.
+// Asi "DIPLO Colab" no muestra LoRA/ControlNet/Tile (que no aplican en este Colab).
+function applyModeVisibility(mode) {
+    document.querySelectorAll('[data-modes]').forEach(el => {
+        const modes = el.getAttribute('data-modes').split(/\s+/);
+        const show = modes.includes(mode);
+        if (el.classList.contains('param-section')) {
+            el.setAttribute('data-hidden', show ? '0' : '1');
+        } else {
+            el.style.display = show ? '' : 'none';
+        }
+    });
+}
+
+// ── Workflow selector + range sliders ──
+document.addEventListener('DOMContentLoaded', () => {
+    const btns = document.querySelectorAll('.workflow-btn');
+    btns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            btns.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            currentWorkflow = btn.dataset.workflow;
+            
+            const simpleParams = document.getElementById('simpleParams');
+            const diploParams = document.getElementById('diploParams');
+            if (DIPLO_LIKE.includes(currentWorkflow)) {
+                simpleParams.style.display = 'none';
+                diploParams.classList.add('visible');
+            } else {
+                simpleParams.style.display = 'block';
+                diploParams.classList.remove('visible');
+            }
+            applyModeVisibility(currentWorkflow);
+            // Modo local (Z-Image GGUF): defaults optimizados 1024x640 / 8 steps
+            if (currentWorkflow === 'local') {
+                const w = document.getElementById('width');
+                const h = document.getElementById('height');
+                const s = document.getElementById('steps');
+                if (w) w.value = 1024;
+                if (h) h.value = 640;
+                if (s) s.value = 8;
+            }
+            Logger.info(`Workflow cambiado a: ${currentWorkflow}`);
+        });
+    });
+    
+    // Estado inicial del panel segun el workflow por defecto (diplocolab usa el panel rico)
+    (function initPanels() {
+        const simpleParams = document.getElementById('simpleParams');
+        const diploParams = document.getElementById('diploParams');
+        // marcar el boton activo correcto
+        btns.forEach(b => b.classList.toggle('active', b.dataset.workflow === currentWorkflow));
+        if (DIPLO_LIKE.includes(currentWorkflow)) {
+            if (simpleParams) simpleParams.style.display = 'none';
+            if (diploParams) diploParams.classList.add('visible');
+        } else {
+            if (simpleParams) simpleParams.style.display = 'block';
+            if (diploParams) diploParams.classList.remove('visible');
+        }
+        applyModeVisibility(currentWorkflow);
+    })();
+
+    // Range slider live updates
+    const rangeSliders = [
+        { input: 'loraStrengthModel', display: 'loraStrengthModelVal' },
+        { input: 'loraStrengthClip', display: 'loraStrengthClipVal' },
+        { input: 'controlnetStrength', display: 'controlnetStrengthVal' },
+        { input: 'tileDenoise', display: 'tileDenoiseVal' },
+        { input: 'scaleBy', display: 'scaleByVal' }
+    ];
+    rangeSliders.forEach(({ input, display }) => {
+        const inp = document.getElementById(input);
+        const disp = document.getElementById(display);
+        if (inp && disp) {
+            inp.addEventListener('input', () => {
+                disp.textContent = parseFloat(inp.value).toFixed(2);
+            });
+        }
+    });
+});
+
+// ── Advanced toggle ──
+function toggleAdvanced() {
+    const adv = document.getElementById('advancedParams');
+    const toggle = document.querySelector('.advanced-toggle');
+    if (adv.classList.contains('open')) {
+        adv.classList.remove('open');
+        toggle.textContent = '🔧 Modelos avanzados ▸';
+    } else {
+        adv.classList.add('open');
+        toggle.textContent = '🔧 Modelos avanzados ▾';
+    }
+}
+
+// ── WebSocket ──
 const imageContainer = document.getElementById('imageContainer');
-
-// Conectar al servidor local (Node.js)
 Logger.info(`Conectar al WebSocket del servidor Node.js`);
 const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
 const wsPath = BASE_PATH ? BASE_PATH + '/' : '';
 const ws = new WebSocket(`${wsProtocol}//${window.location.host}${wsPath}`);
 
-ws.onopen = () => {
-    Logger.info('✓ WebSocket conectado al servidor local');
-    console.log('WebSocket connection established');
-};
-
-ws.onerror = (error) => {
-    Logger.error('Error en WebSocket: ' + error.message);
-    console.error('WebSocket error:', error);
-};
-
-ws.onclose = () => {
-    Logger.warning('WebSocket desconectado del servidor');
-    console.log('WebSocket closed');
-};
+ws.onopen = () => { Logger.info('✓ WebSocket conectado al servidor local'); };
+ws.onerror = (error) => { Logger.error('Error en WebSocket: ' + error.message); };
+ws.onclose = () => { Logger.warning('WebSocket desconectado del servidor'); };
 
 ws.onmessage = (event) => {
-    console.log('Mensaje WebSocket recibido:', event.data);
     const message = JSON.parse(event.data);
     
-    // Manejar mensajes de estado de conexión
     if (message.type === 'connection_status') {
         const statusIndicator = document.getElementById('statusIndicator');
         const statusText = document.getElementById('statusText');
-        
         switch(message.status) {
             case 'connecting':
                 Logger.info(`🔄 Conectando a ComfyUI: ${message.url}`);
-                if (statusIndicator) {
-                    statusIndicator.className = 'status-indicator status-disconnected';
-                }
-                if (statusText) {
-                    statusText.textContent = 'Conectando...';
-                }
-                // Marcar que estamos en proceso de conexión
+                if (statusIndicator) statusIndicator.className = 'status-indicator status-disconnected';
+                if (statusText) statusText.textContent = 'Conectando...';
                 window.comfyConnecting = true;
                 break;
             case 'connected':
                 Logger.info(`✓ ${message.message}`);
-                if (statusIndicator) {
-                    statusIndicator.className = 'status-indicator status-connected';
-                }
-                if (statusText) {
-                    statusText.textContent = 'Conectado';
-                }
-                // Activar flag de conexión y limpiar flag de connecting
-                window.comfyConnected = true;
-                window.comfyConnecting = false;
-                
-                // Resetear y recargar modelos (forzar recarga porque puede ser otra URL)
-                if (typeof resetModels === 'function') {
-                    resetModels();
-                }
-                if (typeof loadAvailableModels === 'function') {
-                    setTimeout(() => loadAvailableModels(true), 500);
-                }
+                if (statusIndicator) statusIndicator.className = 'status-indicator status-connected';
+                if (statusText) statusText.textContent = 'Conectado';
+                window.comfyConnected = true; window.comfyConnecting = false;
+                if (typeof resetModels === 'function') resetModels();
+                if (typeof loadAvailableModels === 'function') setTimeout(() => loadAvailableModels(true), 500);
+                if (typeof loadDiploModels === 'function') setTimeout(() => loadDiploModels(true), 700);
                 break;
             case 'error':
-                Logger.error(`✗ ${message.message}`);
-                if (message.error) {
-                    Logger.error(`Detalles: ${message.error}`);
-                }
-                if (statusIndicator) {
-                    statusIndicator.className = 'status-indicator status-disconnected';
-                }
-                if (statusText) {
-                    statusText.textContent = 'Error';
-                }
+                // El WS a ComfyUI suele cortarse en tuneles free; NO pintamos rojo por eso.
+                // El indicador lo maneja el ping HTTP (pingConnection en config.js), que es
+                // la verdad sobre si el backend responde. Solo logueamos.
+                Logger.warning(`(WS ComfyUI: ${message.message} — no afecta la generación, va por HTTP)`);
                 break;
             case 'disconnected':
-                // Solo mostrar desconectado si no estamos reconectando
-                if (!window.comfyConnecting) {
-                    Logger.warning(`⚠️ ${message.message}`);
-                    if (statusIndicator) {
-                        statusIndicator.className = 'status-indicator status-disconnected';
-                    }
-                    if (statusText) {
-                        statusText.textContent = 'Desconectado';
-                    }
-                } else {
-                    Logger.info(`🔄 Reconectando a nuevo servidor...`);
-                }
-                // Marcar como desconectado
+                // Idem: el WS puede caerse sin que el backend este caido. No tocamos el indicador.
+                Logger.warning(`(WS ComfyUI desconectado — el indicador lo decide el ping HTTP)`);
                 window.comfyConnected = false;
                 break;
         }
         return;
     }
     
-    // Manejar mensajes de progreso detallado
     if (message.type === 'generation_progress') {
-        const progressPercent = 40 + (message.percent * 0.4); // 40% a 80%
-        updateProgress(`${message.message}`, Math.round(progressPercent));
-        Logger.info(`📊 ${message.message} (${message.percent}%)`);
+        const pp = 40 + (message.percent * 0.4);
+        updateProgress(message.message, Math.round(pp));
         return;
     }
     
-    // Manejar mensajes de estado de generación
     if (message.type === 'generation_status') {
         Logger.info(`📊 ${message.message}`);
-        
         switch(message.status) {
-            case 'queued':
-                updateProgress('📋 Prompt en cola...', 20);
-                break;
-            case 'processing':
-                updateProgress('⚙️ Generando imagen...', 40);
-                break;
-            case 'executing':
-                updateProgress('🎨 ComfyUI procesando...', 45);
-                break;
-            case 'downloading':
-                updateProgress('📥 Descargando imagen...', 85);
-                break;
-            case 'error':
-                Logger.error(message.message);
-                hideProgress();
-                alert('Error: ' + message.message);
-                break;
+            case 'queued': updateProgress('📋 Prompt en cola...', 20); break;
+            case 'processing': updateProgress('⚙️ Generando imagen...', 40); break;
+            case 'executing': updateProgress('🎨 ComfyUI procesando...', 45); break;
+            case 'downloading': updateProgress('📥 Descargando imagen...', 85); break;
+            case 'error': Logger.error(message.message); hideProgress(); alert('Error: ' + message.message); break;
         }
         return;
     }
     
-    Logger.info(`Mensaje recibido: ${message.type}`);
-
-    if (message.type === 'image_generated' 
-	&& !message.url.includes('temp')) {
-		Logger.info(`✓ Imagen generada: ${message.url}`);
-		updateProgress('🎨 Descargando imagen...', 80);
-		
-		// TouchDesigner - Solo en desarrollo local
-		// socket.send(JSON.stringify({
-		// 	type: 'terminoImagen',
-		// 	prompt: message.prompt,
-		// 	url: message.url
-		// }));
-		//ComfyUI_temp_pbbek_00072_.png
+    if (message.type === 'image_generated' && !message.url.includes('temp')) {
+        Logger.info(`✓ Imagen generada: ${message.url}`);
+        updateProgress('🎨 Descargando imagen...', 80);
         console.log('Imagen generada:', message.url);
-        console.log('Prompt:', message.prompt);
 
         const img = document.createElement('img');
-        img.src = message.url;
-        img.alt = 'Generated Image';
-
+        img.src = message.url; img.alt = 'Generated Image';
         img.onload = () => {
             updateProgress('✅ ¡Imagen completada!', 100);
             Logger.info('✅ Imagen cargada exitosamente');
-            
-            imageContainer.innerHTML = ''; // Clear previous images
+            imageContainer.innerHTML = '';
             imageContainer.appendChild(img);
-            
-            // Ocultar barra después de 2 segundos
-            setTimeout(() => {
-                hideProgress();
-            }, 2000);
+            document.getElementById('generateButton').disabled = false;
+            document.getElementById('generateButton').textContent = '🚀 Generar Imagen';
+            setTimeout(() => hideProgress(), 2000);
         };
-
         img.onerror = () => {
             Logger.error('❌ Error al cargar la imagen');
             hideProgress();
-            console.error('Failed to load image:', message.url);
+            document.getElementById('generateButton').disabled = false;
+            document.getElementById('generateButton').textContent = '🚀 Generar Imagen';
         };
     }
 };
 
-// Funciones para la barra de progreso
-function showProgress(text = 'Generando...', percent = 0) {
-    const progressSection = document.getElementById('progressSection');
-    const progressBar = document.getElementById('progressBar');
-    const progressText = document.getElementById('progressText');
-    const progressPercent = document.getElementById('progressPercent');
-    
-    progressSection.style.display = 'block';
-    progressBar.style.width = percent + '%';
-    progressText.textContent = text;
-    progressPercent.textContent = percent + '%';
+// ── Progress bar ──
+function showProgress(text, percent) {
+    const ps = document.getElementById('progressSection');
+    ps.style.display = 'block';
+    document.getElementById('progressBar').style.width = percent + '%';
+    document.getElementById('progressText').textContent = text;
+    document.getElementById('progressPercent').textContent = percent + '%';
+}
+function hideProgress() { document.getElementById('progressSection').style.display = 'none'; }
+function updateProgress(text, percent) { showProgress(text, percent); }
+
+// ── Collect params ──
+function getVal(id, fallback) {
+    const el = document.getElementById(id);
+    if (!el) return fallback;
+    const v = el.value;
+    if (v === '' || v === undefined || v === null) return fallback;
+    // Para numeros
+    if (typeof fallback === 'number') {
+        const n = parseFloat(v);
+        return isNaN(n) ? fallback : n;
+    }
+    return v;
 }
 
-function hideProgress() {
-    document.getElementById('progressSection').style.display = 'none';
+function collectParams() {
+    if (DIPLO_LIKE.includes(currentWorkflow)) {
+        return {
+            // KSampler
+            steps: getVal('diploSteps', 8),
+            cfg: getVal('diploCfg', 1.0),
+            denoise: getVal('diploDenoise', 0.55),
+            sampler_name: getVal('diploSampler', 'euler'),
+            scheduler: getVal('diploScheduler', 'simple'),
+            seed: getVal('seed', -1),
+            // Dims
+            width: getVal('diploWidth', 1024),
+            height: getVal('diploHeight', 640),
+            // Prompt
+            negative_prompt: getVal('diploNegPrompt', 'blurry, ugly, low quality'),
+            tile_prompt: getVal('tilePrompt', null),
+            // LoRA
+            lora_name: getVal('loraName', 'Bradhamel_art_style.safetensors'),
+            lora_strength_model: getVal('loraStrengthModel', 0.80),
+            lora_strength_clip: getVal('loraStrengthClip', 1.00),
+            // ControlNet
+            ref_image: getVal('refImage', 'DSC09211 (2).jpg'),
+            preprocessor: getVal('preprocessor', 'CannyEdgePreprocessor'),
+            preprocessor_low: getVal('preprocessorLow', 100),
+            preprocessor_high: getVal('preprocessorHigh', 200),
+            preprocessor_resolution: getVal('preprocessorRes', 512),
+            controlnet_strength: getVal('controlnetStrength', 0.90),
+            scale_by: getVal('scaleBy', 0.19),
+            scale_method: 'nearest-exact',
+            // Tile refine
+            tile_steps: getVal('tileSteps', 10),
+            tile_denoise: getVal('tileDenoise', 0.20),
+            tile_cols: getVal('tileCols', 3),
+            tile_rows: getVal('tileRows', 3),
+            tile_overlap: getVal('tileOverlap', 0.05),
+            tile_sampler: getVal('tileSampler', 'euler'),
+            tile_scheduler: getVal('tileScheduler', 'simple'),
+            // Output
+            upscale_width: getVal('upscaleWidth', 1128),
+            upscale_height: getVal('upscaleHeight', 672),
+            upscale_resize_mode: getVal('upscaleResizeMode', 'crop'),
+            upscale_resize_method: getVal('upscaleResizeMethod', 'nearest-exact'),
+            // Advanced models
+            unet_name: getVal('unetName', 'z_image_turbo_fp8_e4m3fn.safetensors.safetensors'),
+            weight_dtype: getVal('weightDtype', 'fp8_e4m3fn'),
+            vae_name: getVal('vaeName', 'ultrafluxVAEImproved_v10.safetensors'),
+            clip_name: getVal('clipName', 'qwen_3_4b.safetensors.safetensors'),
+            upscale_model_name: getVal('upscaleModel', '2x-AnimeSharpV4_RCAN.safetensors'),
+            model_patch_name: getVal('modelPatchName', 'Z-Image-Turbo-Fun-Controlnet-Union.safetensors')
+        };
+    } else {
+        return {
+            steps: parseInt(document.getElementById('steps').value) || 6,
+            width: parseInt(document.getElementById('width').value) || 1080,
+            height: parseInt(document.getElementById('height').value) || 1080,
+            seed: parseInt(document.getElementById('seed').value) || -1,
+            model: document.getElementById('modelSelect').value || 'realvisxl.safetensors',
+            negative_prompt: getVal('negPrompt', 'text, watermark')
+        };
+    }
 }
 
-function updateProgress(text, percent) {
-    showProgress(text, percent);
-}
-
+// ── Generate button ──
 document.getElementById('generateButton').addEventListener('click', () => {
     const prompt = document.getElementById('prompt').value;
-    if (!prompt) {
-        Logger.warning('Prompt vacío');
-        alert('Por favor, ingrese un prompt.');
-        return;
-    }
+    if (!prompt) { alert('Por favor, ingresa un prompt.'); return; }
     
-    // Obtener todos los parámetros
-    const params = {
-        steps: parseInt(document.getElementById('steps').value) || 6,
-        width: parseInt(document.getElementById('width').value) || 1080,
-        height: parseInt(document.getElementById('height').value) || 1080,
-        seed: parseInt(document.getElementById('seed').value) || -1,
-        model: document.getElementById('modelSelect').value || 'realvisxl.safetensors'
-    };
+    const genBtn = document.getElementById('generateButton');
+    genBtn.disabled = true;
+    genBtn.textContent = '⏳ Generando...';
     
-    // Si seed es -1, generar uno aleatorio
+    const params = collectParams();
     if (params.seed === -1) {
         params.seed = Math.floor(Math.random() * 18446744073709551614) + 1;
         document.getElementById('seed').value = params.seed;
     }
     
-    Logger.info(`📤 Enviando prompt: "${prompt.substring(0, 50)}${prompt.length > 50 ? '...' : ''}"`);
-    Logger.info(`📊 Parámetros: Steps=${params.steps}, Size=${params.width}x${params.height}, Seed=${params.seed}, Model=${params.model}`);
+    Logger.info(`📤 [${currentWorkflow}] Prompt: "${prompt.substring(0, 50)}${prompt.length > 50 ? '...' : ''}"`);
+    Logger.info(`📊 Params: ${JSON.stringify(params).substring(0, 200)}...`);
     showProgress('📤 Enviando prompt a ComfyUI...', 10);
     
     ws.send(JSON.stringify({ 
         type: 'generarImagen', 
         prompt: prompt,
+        workflow: currentWorkflow,
         params: params
     }));
     
-    // Simular progreso mientras espera respuesta
     setTimeout(() => {
         updateProgress('⏳ Procesando en ComfyUI...', 30);
-        Logger.info('⏳ Esperando respuesta de ComfyUI...');
     }, 500);
 });

@@ -1,0 +1,393 @@
+{
+  "3": {
+    "inputs": {
+      "seed": 856043364873037,
+      "control_after_generate": "fixed",
+      "steps": 8,
+      "cfg": 1.0,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 0.55,
+      "model": ["75", 0],
+      "positive": ["6", 0],
+      "negative": ["7", 0],
+      "latent_image": ["13", 0]
+    },
+    "class_type": "KSampler",
+    "_meta": {"title": "KSampler (generacion base)"}
+  },
+  "6": {
+    "inputs": {
+      "text": "",
+      "clip": ["90", 1]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {"title": "CLIP Text Encode (Positive Prompt)"}
+  },
+  "7": {
+    "inputs": {
+      "text": "blurry, ugly, low quality, deformed hands, extra limbs, text, watermark",
+      "clip": ["90", 1]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {"title": "CLIP Text Encode (Negative Prompt)"}
+  },
+  "9": {
+    "inputs": {
+      "filename_prefix": "ComfyUI",
+      "images": ["92", 0]
+    },
+    "class_type": "SaveImage",
+    "_meta": {"title": "Save Image (simple branch)"}
+  },
+  "13": {
+    "inputs": {
+      "width": 1024,
+      "height": 640,
+      "batch_size": 1
+    },
+    "class_type": "EmptySD3LatentImage",
+    "_meta": {"title": "Empty SD3 Latent Image"}
+  },
+  "16": {
+    "inputs": {
+      "unet_name": "z_image_turbo_fp8_e4m3fn.safetensors.safetensors",
+      "weight_dtype": "fp8_e4m3fn"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {"title": "UNET Loader (Z-Image-Turbo)"}
+  },
+  "17": {
+    "inputs": {
+      "vae_name": "ultrafluxVAEImproved_v10.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {"title": "VAE Loader (UltraFlux)"}
+  },
+  "28": {
+    "inputs": {
+      "clip_name": "qwen_3_4b.safetensors.safetensors",
+      "type": "lumina2"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {"title": "CLIP Loader (Qwen 4B)"}
+  },
+  "30": {
+    "inputs": {
+      "filename_prefix": "ComfyUI",
+      "images": ["52", 0]
+    },
+    "class_type": "SaveImage",
+    "_meta": {"title": "Save Image (tiled branch)"}
+  },
+  "39": {
+    "inputs": {
+      "sampler_name": "euler"
+    },
+    "class_type": "KSamplerSelect",
+    "_meta": {"title": "KSampler Select"}
+  },
+  "40": {
+    "inputs": {
+      "noise_seed": 316430325547060
+    },
+    "class_type": "RandomNoise",
+    "_meta": {"title": "Random Noise"}
+  },
+  "42": {
+    "inputs": {
+      "images": ["46", 0]
+    },
+    "class_type": "easy imageListToImageBatch",
+    "_meta": {"title": "Image List to Batch"}
+  },
+  "43": {
+    "inputs": {
+      "image": ["87", 0],
+      "upscale_method": "lanczos",
+      "megapixels": 4
+    },
+    "class_type": "ImageScaleToTotalPixels",
+    "_meta": {"title": "Image Scale To Total Pixels"}
+  },
+  "45": {
+    "inputs": {
+      "pixels": ["57", 0],
+      "vae": ["17", 0]
+    },
+    "class_type": "VAEEncode",
+    "_meta": {"title": "VAE Encode (tiles)"}
+  },
+  "46": {
+    "inputs": {
+      "samples": ["55", 0],
+      "vae": ["17", 0],
+      "tile_size": 2048
+    },
+    "class_type": "VAEDecodeTiled",
+    "_meta": {"title": "VAE Decode Tiled"}
+  },
+  "47": {
+    "inputs": {
+      "text": "",
+      "clip": ["90", 1]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {"title": "CLIP Text Encode (tiled refine)"}
+  },
+  "48": {
+    "inputs": {
+      "": ["43", 0]
+    },
+    "class_type": "Reroute",
+    "_meta": {"title": "Reroute"}
+  },
+  "49": {
+    "inputs": {
+      "image": ["48", 0],
+      "cols": 3,
+      "rows": 3,
+      "overlap": 0.05
+    },
+    "class_type": "TTP_Tile_image_size",
+    "_meta": {"title": "Tile Image Size"}
+  },
+  "50": {
+    "inputs": {
+      "image": ["48", 0],
+      "tile_width": ["49", 0],
+      "tile_height": ["49", 1]
+    },
+    "class_type": "TTP_Image_Tile_Batch",
+    "_meta": {"title": "Image Tile Batch"}
+  },
+  "51": {
+    "inputs": {
+      "model": ["90", 0],
+      "conditioning": ["47", 0]
+    },
+    "class_type": "BasicGuider",
+    "_meta": {"title": "Basic Guider"}
+  },
+  "52": {
+    "inputs": {
+      "tiles": ["42", 0],
+      "positions": ["50", 1],
+      "original_size": ["50", 2],
+      "grid_size": ["50", 3],
+      "overlap_pixels": 128
+    },
+    "class_type": "TTP_Image_Assy",
+    "_meta": {"title": "Image Assembly"}
+  },
+  "55": {
+    "inputs": {
+      "noise": ["40", 0],
+      "guider": ["51", 0],
+      "sampler": ["39", 0],
+      "sigmas": ["56", 0],
+      "latent_image": ["45", 0]
+    },
+    "class_type": "SamplerCustomAdvanced",
+    "_meta": {"title": "Sampler Custom Advanced"}
+  },
+  "56": {
+    "inputs": {
+      "model": ["90", 0],
+      "scheduler": "simple",
+      "steps": 10,
+      "denoise": 0.2
+    },
+    "class_type": "BasicScheduler",
+    "_meta": {"title": "Basic Scheduler (tiled refine)"}
+  },
+  "57": {
+    "inputs": {
+      "image": ["50", 0]
+    },
+    "class_type": "easy imageBatchToImageList",
+    "_meta": {"title": "Image Batch to List"}
+  },
+  "61": {
+    "inputs": {
+      "image": "DSC09211 (2).jpg",
+      "upload": "image"
+    },
+    "class_type": "LoadImage",
+    "_meta": {"title": "Load Image (ref para ControlNet)"}
+  },
+  "64": {
+    "inputs": {
+      "anything": ["92", 0],
+      "gpu": true,
+      "cpu": true,
+      "vram": true,
+      "mode": 3
+    },
+    "class_type": "RAMCleanup",
+    "_meta": {"title": "RAM Cleanup (branch simple)"}
+  },
+  "65": {
+    "inputs": {
+      "anything": ["92", 0],
+      "gpu": true,
+      "cpu": true,
+      "vram": true,
+      "mode": 3
+    },
+    "class_type": "RAMCleanup",
+    "_meta": {"title": "RAM Cleanup (branch tiled)"}
+  },
+  "66": {
+    "inputs": {
+      "pixels": ["89", 0],
+      "vae": ["17", 0]
+    },
+    "class_type": "VAEEncode",
+    "_meta": {"title": "VAE Encode (simple, no output)"}
+  },
+  "67": {
+    "inputs": {
+      "image_a": ["52", 0],
+      "image_b": ["64", 0]
+    },
+    "class_type": "Image Comparer (rgthree)",
+    "_meta": {"title": "Image Comparer"}
+  },
+  "75": {
+    "inputs": {
+      "model": ["90", 0],
+      "model_patch": ["76", 0],
+      "vae": ["17", 0],
+      "image": ["80", 0],
+      "strength": 0.90
+    },
+    "class_type": "QwenImageDiffsynthControlnet",
+    "_meta": {"title": "Qwen Image DiffSynth ControlNet"}
+  },
+  "76": {
+    "inputs": {
+      "model_patch_name": "Z-Image-Turbo-Fun-Controlnet-Union.safetensors"
+    },
+    "class_type": "ModelPatchLoader",
+    "_meta": {"title": "Model Patch Loader (ControlNet Union)"}
+  },
+  "80": {
+    "inputs": {
+      "image": ["61", 0],
+      "preprocessor": "CannyEdgePreprocessor",
+      "low_threshold": 100,
+      "high_threshold": 200,
+      "resolution": 512
+    },
+    "class_type": "AIO_Preprocessor",
+    "_meta": {"title": "AIO Preprocessor (Canny Edge)"}
+  },
+  "82": {
+    "inputs": {
+      "image": ["91", 0],
+      "model": "Qwen3-VL-4B-Instruct-Abliterated",
+      "precision": "auto",
+      "system_prompt": "🖼️ Ultra Detailed Description",
+      "user_prompt": "make a prompt for this image be very strict about specifics of the image to generate a lowpoly style promt in the style of eran Hilleli.",
+      "max_new_tokens": 1024,
+      "max_resolution": 512,
+      "temperature": 1,
+      "seed": 3109770774,
+      "stream": false
+    },
+    "class_type": "AILab_QwenVL",
+    "_meta": {"title": "QwenVL (analyze image -> prompt)"}
+  },
+  "83": {
+    "inputs": {
+      "text": ["82", 0]
+    },
+    "class_type": "ShowText|pysssss",
+    "_meta": {"title": "Show Text (QwenVL output)"}
+  },
+  "84": {
+    "inputs": {
+      "upscale_model": ["85", 0],
+      "image": ["64", 0]
+    },
+    "class_type": "ImageUpscaleWithModel",
+    "_meta": {"title": "Image Upscale (2x AnimeSharp)"}
+  },
+  "85": {
+    "inputs": {
+      "model_name": "2x-AnimeSharpV4_RCAN.safetensors"
+    },
+    "class_type": "UpscaleModelLoader",
+    "_meta": {"title": "Upscale Model Loader"}
+  },
+  "86": {
+    "inputs": {
+      "filename_prefix": "ComfyUI",
+      "images": ["84", 0]
+    },
+    "class_type": "SaveImage",
+    "_meta": {"title": "Save Image (upscale sin tile)"}
+  },
+  "87": {
+    "inputs": {
+      "image": ["84", 0],
+      "mode": "pixels",
+      "width": 1128,
+      "height": 672,
+      "resize_mode": "crop",
+      "method": "nearest-exact"
+    },
+    "class_type": "Image Resize (rgthree)",
+    "_meta": {"title": "Image Resize (post-upscale)"}
+  },
+  "89": {
+    "inputs": {
+      "image": ["61", 0],
+      "upscale_method": "nearest-exact",
+      "scale_by": 0.19
+    },
+    "class_type": "ImageScaleBy",
+    "_meta": {"title": "Image Scale By (downscale ref)"}
+  },
+  "90": {
+    "inputs": {
+      "model": ["16", 0],
+      "clip": ["28", 0],
+      "lora_name": "Bradhamel_art_style.safetensors",
+      "strength_model": 0.80,
+      "strength_clip": 1.00
+    },
+    "class_type": "LoraLoader",
+    "_meta": {"title": "LoRA Loader (Bradhamel art style)"}
+  },
+  "91": {
+    "inputs": {
+      "image": "Screenshot 2026-03-19 at 8.59.38 AM.png",
+      "upload": "image"
+    },
+    "class_type": "LoadImage",
+    "_meta": {"title": "Load Image (para QwenVL)"}
+  },
+  "92": {
+    "inputs": {
+      "samples": ["3", 0],
+      "vae": ["17", 0],
+      "mode": "tiled",
+      "use_tiling": false,
+      "tile_size": 512,
+      "overlap_x": 64,
+      "overlap_y": 64,
+      "temporal_size": 8
+    },
+    "class_type": "VAEDecodePlusPlus",
+    "_meta": {"title": "VAE Decode++ (simple branch)"}
+  },
+  "93": {
+    "inputs": {
+      "images": ["80", 0]
+    },
+    "class_type": "PreviewImage",
+    "_meta": {"title": "Preview (preprocessor output)"}
+  }
+}
