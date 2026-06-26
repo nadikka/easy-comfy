@@ -416,8 +416,11 @@ app.post(BASE_PATH + '/api/add-lora', async (req, res) => {
                 let data = '';
                 resp.on('data', c => data += c);
                 resp.on('end', () => {
-                    if (resp.statusCode === 404) return reject(new Error('El Colab no tiene /leo/add_lora todavía. Reiniciá el Colab con el notebook actualizado.'));
-                    try { resolve(JSON.parse(data)); } catch (e) { reject(new Error('Respuesta inválida del Colab: ' + data.slice(0, 200))); }
+                    if (resp.statusCode === 404 || resp.statusCode === 405) {
+                        return reject(new Error('El Colab todavía no tiene la función para agregar LoRAs (/leo/add_lora). Reiniciá el Colab con el notebook actualizado (Run all desde GitHub) y reconectá la URL.'));
+                    }
+                    try { resolve(JSON.parse(data)); }
+                    catch (e) { reject(new Error('El Colab respondió algo inesperado (¿reiniciaste con el notebook nuevo?): ' + data.slice(0, 120))); }
                 });
             });
             r.on('error', reject);
