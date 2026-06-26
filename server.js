@@ -396,6 +396,47 @@ app.post(BASE_PATH + '/api/upload-image', async (req, res) => {
     }
 });
 
+// Agrega un LoRA al Colab descargándolo por URL. Usa el mini-endpoint /leo/add_lora
+// del custom node leo_lora_fetch que instala nuestro notebook. Devuelve el nombre guardado.
+app.post(BASE_PATH + '/api/add-lora', async (req, res) => {
+    try {
+        const { url, filename } = req.body || {};
+        if (!url) return res.json({ success: false, error: 'falta la URL del LoRA' });
+        const parsed = parseComfyUrl(config.comfyUrl);
+        const httpModule = getHttpModule(config.comfyUrl);
+        const payload = JSON.stringify({ url, filename: filename || '' });
+        const target = new URL(parsed.baseUrl + '/leo/add_lora');
+        console.log(`🧩 [add-lora] pidiendo al Colab bajar: ${url}`);
+        const out = await new Promise((resolve, reject) => {
+            const r = httpModule.request(target, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) },
+                timeout: 600000 // descargas grandes
+            }, (resp) => {
+                let data = '';
+                resp.on('data', c => data += c);
+                resp.on('end', () => {
+                    if (resp.statusCode === 404) return reject(new Error('El Colab no tiene /leo/add_lora todavía. Reiniciá el Colab con el notebook actualizado.'));
+                    try { resolve(JSON.parse(data)); } catch (e) { reject(new Error('Respuesta inválida del Colab: ' + data.slice(0, 200))); }
+                });
+            });
+            r.on('error', reject);
+            r.on('timeout', () => r.destroy(new Error('timeout descargando el LoRA')));
+            r.write(payload);
+            r.end();
+        });
+        if (out && out.success) {
+            console.log(`🧩 [add-lora] OK en Colab: ${out.name}`);
+            res.json({ success: true, name: out.name, path: out.path });
+        } else {
+            res.json({ success: false, error: (out && out.error) || 'fallo en el Colab' });
+        }
+    } catch (e) {
+        console.error('[add-lora] error:', e.message);
+        res.json({ success: false, error: e.message });
+    }
+});
+
 // Corre SOLO el preprocesador sobre la imagen de referencia y devuelve la URL del
 // resultado, para que el usuario VEA cómo procesa antes de generar (vista previa).
 app.post(BASE_PATH + '/api/preprocess-preview', async (req, res) => {
@@ -1160,6 +1201,22 @@ async function generarImagenDiploColab(promptText, params = {}) {
     setIn(wf, "28", "clip_name", clip_name);
     setIn(wf, "28", "type", clip_type);
     setIn(wf, "85", "model_name", upscale_model_name);
+
+    // LoRA opcional: si la UI manda use_lora + lora_name, insertamos un LoraLoaderModelOnly
+    // (nodo 90) entre el UNET (16) y el KSampler (3). Si no, el modelo va directo del UNET.
+    if (params.use_lora && params.lora_name) {
+        wf["90"] = {
+            inputs: {
+                lora_name: params.lora_name,
+                strength_model: params.lora_strength_model ?? 0.8,
+                model: ["16", 0]
+            },
+            class_type: "LoraLoaderModelOnly",
+            _meta: { title: "LoRA (opcional)" }
+        };
+        setIn(wf, "3", "model", ["90", 0]);
+        console.log(`🧩 [DIPLO-COLAB] LoRA: ${params.lora_name} @ ${params.lora_strength_model ?? 0.8}`);
+    }
 
     console.log(`🎨 [DIPLO-COLAB] Generando:`, {
         prompt: promptText.substring(0, 60) + '...', seed, steps, cfg, sampler_name, scheduler, width, height

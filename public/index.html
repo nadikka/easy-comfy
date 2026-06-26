@@ -93,6 +93,47 @@
         .section-desc { font-size: 12px; color: #6b7280; margin: 2px 0 12px 0; line-height: 1.4; background: #f8f9fb; border-left: 3px solid #667eea; padding: 7px 10px; border-radius: 0 6px 6px 0; }
         /* Secciones que solo aplican a ciertos workflows (se ocultan por JS segun el modo) */
         .param-section[data-hidden="1"] { display: none; }
+
+        /* ── Caja de prompt principal (prompt + negativo juntos, ancho completo, abajo) ── */
+        .prompt-block { background: #f4f6fb; border: 1px solid #d8def0; border-radius: 10px; padding: 18px 18px 14px; margin: 6px 0 18px; }
+        .prompt-block label { display: block; margin-bottom: 5px; font-weight: 600; color: #444; font-size: 13px; }
+        .prompt-block textarea { width: 100%; padding: 12px; border: 1px solid #cdd4e6; border-radius: 6px; font-size: 14px; resize: vertical; font-family: inherit; }
+        .prompt-block #prompt { min-height: 110px; }
+        .prompt-block #negPrompt { min-height: 56px; background: #fff; }
+        .prompt-block .pb-neg { margin-top: 12px; }
+
+        /* ── Badge "ControlNet activado" al subir imagen ── */
+        .cn-badge { display: none; align-items: center; gap: 8px; background: #e8f5e9; border: 1px solid #a5d6a7; color: #2e7d32; padding: 8px 12px; border-radius: 6px; font-size: 13px; font-weight: 600; margin: 8px 0; }
+        .cn-badge.on { display: inline-flex; }
+        .cn-badge button { background: none; border: none; color: #c62828; cursor: pointer; font-size: 12px; text-decoration: underline; padding: 0; }
+        .file-upload-box { border: 2px dashed #b9c2dd; border-radius: 8px; padding: 14px; text-align: center; background: #fbfcff; }
+        .file-upload-box input[type="file"] { font-size: 13px; }
+        .guide-btn { background: #fff; border: 1px solid #667eea; color: #667eea; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 600; }
+        .guide-btn:hover { background: #667eea; color: #fff; }
+
+        /* ── Modal (popup guía de preprocesadores) ── */
+        .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.55); z-index: 1000; justify-content: center; align-items: flex-start; padding: 40px 20px; overflow-y: auto; }
+        .modal-overlay.open { display: flex; }
+        .modal-card { background: #fff; border-radius: 12px; max-width: 760px; width: 100%; box-shadow: 0 20px 60px rgba(0,0,0,0.35); }
+        .modal-head { display: flex; justify-content: space-between; align-items: center; padding: 18px 24px; border-bottom: 1px solid #eee; position: sticky; top: 0; background: #fff; border-radius: 12px 12px 0 0; }
+        .modal-head h3 { font-size: 18px; color: #333; }
+        .modal-close { background: none; border: none; font-size: 24px; cursor: pointer; color: #999; line-height: 1; }
+        .modal-close:hover { color: #333; }
+        .modal-body { padding: 18px 24px 24px; }
+        .modal-body .intro { font-size: 13px; color: #555; line-height: 1.5; margin-bottom: 16px; }
+        .pp-card { border: 1px solid #e6e6e6; border-left: 4px solid #667eea; border-radius: 0 8px 8px 0; padding: 11px 14px; margin-bottom: 10px; }
+        .pp-card h4 { font-size: 14px; color: #333; margin-bottom: 3px; }
+        .pp-card .pp-tag { font-size: 11px; color: #fff; background: #667eea; border-radius: 4px; padding: 1px 7px; margin-left: 6px; vertical-align: middle; font-weight: 600; }
+        .pp-card p { font-size: 12.5px; color: #555; line-height: 1.45; margin: 2px 0 0; }
+        .pp-card .pp-use { color: #2e7d32; font-weight: 600; }
+        .pp-group-title { font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: #888; margin: 16px 0 8px; font-weight: 700; }
+        .pp-card h4 .pp-tag { color: #fff; border-radius: 4px; padding: 1px 7px; margin-left: 6px; vertical-align: middle; font-weight: 600; font-size: 10.5px; }
+        .pp-card h4 .pp-dot, .lg-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+
+        /* ── Leyenda de colores del dropdown de preprocesadores ── */
+        .preproc-legend { display: flex; flex-wrap: wrap; gap: 6px 12px; margin-top: 6px; padding: 8px 10px; background: #f8f9fb; border-radius: 6px; }
+        .preproc-legend .lg-item { font-size: 11px; color: #555; display: inline-flex; align-items: center; }
+        .preproc-legend .lg-dot { width: 9px; height: 9px; }
     </style>
 </head>
 <body>
@@ -120,6 +161,17 @@
 
             <div class="generation-section">
                 <h3>✨ Generar Imagen</h3>
+
+                <!-- ── Caja principal: Prompt + Negativo juntos, ancho completo, ARRIBA DE TODO ── -->
+                <div class="prompt-block">
+                    <label for="prompt">📝 Prompt — describí la imagen</label>
+                    <textarea id="prompt" placeholder="Describe la imagen que querés generar... (ej: lowpoly fox in a misty forest, geometric, soft light)"></textarea>
+                    <div class="pb-neg">
+                        <label for="negPrompt">🚫 Negative prompt — lo que NO querés <span class="info-tip" data-tip="Lo que querés evitar en la imagen: blur, deformaciones, marcas de agua, texto. Recomendado: blurry, low quality, deformed, text, watermark.">i</span></label>
+                        <textarea id="negPrompt" placeholder="blurry, low quality, deformed, text, watermark...">blurry, ugly, low quality, deformed hands, extra limbs, text, watermark</textarea>
+                    </div>
+                </div>
+
                 <div class="workflow-selector" id="workflowSelector">
                     <button class="workflow-btn active" data-workflow="diplocolab">
                         <span class="wf-name">DIPLO Colab (Z-Image + Upscale 2x)</span>
@@ -142,17 +194,8 @@
                     -->
                 </div>
 
-                <div class="form-group">
-                    <label>Prompt:</label>
-                    <textarea id="prompt" placeholder="Describe la imagen que querés generar..."></textarea>
-                </div>
-
-                <!-- ── SIMPLE workflow params ── -->
+                <!-- ── SIMPLE workflow params (prompt + negativo van en la caja de abajo) ── -->
                 <div id="simpleParams">
-                    <div class="form-group">
-                        <label>Negative prompt <span class="info-tip" data-tip="Lo que NO querés en la imagen: blur, deformaciones, marcas de agua, texto, etc.">i</span></label>
-                        <textarea id="negPrompt" placeholder="text, watermark, blurry..." style="min-height:50px;">text, watermark, blurry, low quality</textarea>
-                    </div>
                     <div class="form-row">
                         <div class="form-group"><label>Modelo: <span class="info-tip" data-tip="Checkpoint a usar. Se cargan automáticamente desde ComfyUI al conectar">i</span></label><select id="modelSelect"><option value="realvisxl.safetensors">realvisxl.safetensors</option></select></div>
                         <div class="form-group"><label>Steps: <span class="info-tip" data-tip="Pasos de muestreo. Z-Image Turbo va bien con 8. Más = más lento.">i</span></label><input type="number" id="steps" value="8" min="1" max="150"></div>
@@ -165,14 +208,10 @@
 
                 <!-- ── DIPLO workflow params ── -->
                 <div id="diploParams">
-                    <!-- 1. Prompt & Dimensiones -->
+                    <!-- 1. Dimensiones (el prompt + negativo van en la caja de abajo) -->
                     <div class="param-section" data-modes="diplocolab diplo">
-                        <h4><span class="section-icon">📝</span> Prompt & Dimensiones</h4>
-                        <p class="section-desc">Define QUÉ se genera y a qué tamaño. El prompt principal va arriba; acá ajustás lo que NO querés (negative) y el tamaño base en píxeles. Más grande = más lento y más VRAM. Editá libremente; los defaults (1024×640) andan bien.</p>
-                        <div class="form-group">
-                            <label>Negative prompt <span class="info-tip" data-tip="Lo que NO querés en la imagen: blur, deformaciones, marcas de agua, etc.">i</span></label>
-                            <textarea id="diploNegPrompt" placeholder="blurry, ugly, low quality..." style="min-height:50px;">blurry, ugly, low quality, deformed hands, extra limbs, text, watermark</textarea>
-                        </div>
+                        <h4><span class="section-icon">📐</span> Dimensiones</h4>
+                        <p class="section-desc">El tamaño base en píxeles de la generación. Más grande = más lento y más VRAM. Los defaults (1024×640) andan bien. El prompt y el negativo se escriben en la caja grande de abajo.</p>
                         <div class="form-row">
                             <div class="form-group">
                                 <label>Ancho base <span class="info-tip" data-tip="Ancho en píxeles de la generación inicial con KSampler (EmptySD3LatentImage)">i</span></label>
@@ -195,11 +234,11 @@
                         <p class="section-desc">El corazón del proceso: convierte el texto en imagen muestreando ruido. <b>Steps</b> = cuántas iteraciones (Z-Image Turbo va con ~8). <b>CFG</b> = qué tanto obedece el prompt (Turbo usa 1). <b>Sampler/Scheduler</b> = el algoritmo (euler/simple es seguro). Los dropdowns se llenan solos con lo que tiene el backend. Tocá si querés experimentar; con los defaults ya sale bien.</p>
                         <div class="form-row">
                             <div class="form-group">
-                                <label>Steps <span class="info-tip" data-tip="Cantidad de pasos de muestreo. Más = más calidad pero más lento. Z-Image-Turbo funciona bien con 4-12">i</span></label>
+                                <label>Steps <span class="info-tip" data-tip="Cantidad de pasos de muestreo. Más = más calidad pero más lento. Recomendado: 8 (Z-Image-Turbo va bien con 4–12).">i</span></label>
                                 <input type="number" id="diploSteps" value="8" min="1" max="150">
                             </div>
                             <div class="form-group">
-                                <label>CFG <span class="info-tip" data-tip="Classifier-Free Guidance: qué tanto sigue el prompt. 1 = sigue el prompt exacto, 7+ = más creativo pero puede distorsionar">i</span></label>
+                                <label>CFG <span class="info-tip" data-tip="Classifier-Free Guidance: qué tanto sigue el prompt. 1 = sigue el prompt exacto, 7+ = más creativo pero puede distorsionar. Recomendado: 1 (Z-Image-Turbo).">i</span></label>
                                 <input type="number" id="diploCfg" value="1.0" min="1" max="30" step="0.5">
                             </div>
                             <div class="form-group">
@@ -209,7 +248,7 @@
                         </div>
                         <div class="form-row">
                             <div class="form-group">
-                                <label>Sampler <span class="info-tip" data-tip="Algoritmo de muestreo. euler = rápido y limpio, dpmpp_2m = más detalle, ipndm = suave">i</span></label>
+                                <label>Sampler <span class="info-tip" data-tip="Algoritmo de muestreo. euler = rápido y limpio, dpmpp_2m = más detalle, ipndm = suave. Recomendado: euler.">i</span></label>
                                 <select id="diploSampler">
                                     <option value="euler" selected>euler</option>
                                     <option value="euler_ancestral">euler_ancestral</option>
@@ -228,7 +267,7 @@
                                 </select>
                             </div>
                             <div class="form-group">
-                                <label>Scheduler <span class="info-tip" data-tip="Estrategia de scheduling de ruido. simple = lineal, normal = estándar SD, ddim_uniform = más variación">i</span></label>
+                                <label>Scheduler <span class="info-tip" data-tip="Estrategia de scheduling de ruido. simple = lineal, normal = estándar SD, ddim_uniform = más variación. Recomendado: simple.">i</span></label>
                                 <select id="diploScheduler">
                                     <option value="simple" selected>simple</option>
                                     <option value="normal">normal</option>
@@ -242,49 +281,62 @@
                     </div>
 
                     <!-- 3. LoRA -->
-                    <div class="param-section" data-modes="diplo">
+                    <div class="param-section" data-modes="diplocolab diplo">
                         <h4><span class="section-icon">🧩</span> LoRA</h4>
-                        <p class="section-desc">Inyecta un estilo entrenado aparte (un .safetensors) sobre el modelo. <b>Model/CLIP strength</b> = cuánto pesa (0.7–0.9 normal). Solo en el DIPLO completo: este Colab no tiene LoRA cargado, así que el estilo lowpoly sale del modelo+prompt. (Se usa en tu repo propio con tus LoRAs.)</p>
+                        <p class="section-desc">Inyecta un estilo entrenado aparte (un .safetensors) sobre el modelo. Activá <b>"Usar LoRA"</b>, elegí uno del desplegable y ajustá la fuerza (0.7–0.9 normal). ¿No está en la lista? Pegá el link abajo y se baja al Colab.</p>
+                        <label style="display:flex;align-items:center;gap:8px;margin-bottom:10px;font-weight:600;cursor:pointer;">
+                            <input type="checkbox" id="useLora"> Usar LoRA en la generación
+                        </label>
                         <div class="form-row">
                             <div class="form-group">
-                                <label>LoRA name <span class="info-tip" data-tip="Archivo .safetensors del LoRA a cargar. Define el estilo visual. Se llena solo desde ComfyUI al conectar">i</span></label>
-                                <select id="loraName"><option value="Bradhamel_art_style.safetensors">Bradhamel_art_style.safetensors</option></select>
+                                <label>LoRA name <span class="info-tip" data-tip="Archivo del LoRA a cargar. Define el estilo visual. Se llena solo desde ComfyUI al conectar. Recomendado: el que quieras + fuerza 0.7–0.9.">i</span></label>
+                                <select id="loraName"><option value="">— (conectá / agregá un LoRA) —</option></select>
                             </div>
-                        </div>
-                        <div class="form-row">
                             <div class="form-group">
-                                <label>Model strength <span class="info-tip" data-tip="Intensidad del LoRA sobre el modelo UNET. 0 = no se aplica, 1 = fuerza completa. 0.7-0.9 es lo normal">i</span></label>
+                                <label>Model strength <span class="info-tip" data-tip="Intensidad del LoRA sobre el modelo. 0 = no se aplica, 1 = fuerza completa. Recomendado: 0.7–0.9.">i</span></label>
                                 <div class="range-row">
                                     <input type="range" id="loraStrengthModel" value="0.80" min="0.1" max="1.5" step="0.05">
                                     <span class="range-value" id="loraStrengthModelVal">0.80</span>
                                 </div>
                             </div>
-                            <div class="form-group">
-                                <label>CLIP strength <span class="info-tip" data-tip="Intensidad del LoRA sobre el CLIP (text encoder). Afecta qué tan fuerte el prompt sigue el estilo. 1.0 es lo estándar">i</span></label>
-                                <div class="range-row">
-                                    <input type="range" id="loraStrengthClip" value="1.00" min="0.1" max="1.5" step="0.05">
-                                    <span class="range-value" id="loraStrengthClipVal">1.00</span>
-                                </div>
+                        </div>
+                        <div class="form-group" data-modes="diplo">
+                            <label>CLIP strength <span class="info-tip" data-tip="Intensidad del LoRA sobre el CLIP (solo DIPLO completo). 1.0 es lo estándar.">i</span></label>
+                            <div class="range-row">
+                                <input type="range" id="loraStrengthClip" value="1.00" min="0.1" max="1.5" step="0.05">
+                                <span class="range-value" id="loraStrengthClipVal">1.00</span>
                             </div>
+                        </div>
+
+                        <!-- Agregar LoRA por URL -->
+                        <div class="file-upload-box" style="text-align:left;margin-top:8px;">
+                            <label style="font-weight:600;font-size:13px;color:#444;">➕ Agregar un LoRA por link <span class="info-tip" data-tip="Pegá el link de descarga directa (.safetensors). De Civitai: botón derecho en 'Download' → Copiar enlace (incluye tu token). Se baja al Colab y aparece en el desplegable.">i</span></label>
+                            <input type="text" id="loraUrl" class="config-input" placeholder="https://civitai.com/api/download/models/...  (o cualquier .safetensors)" style="margin-top:6px;">
+                            <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap;">
+                                <input type="text" id="loraFilename" class="config-input" placeholder="nombre.safetensors (opcional)" style="flex:1;min-width:160px;">
+                                <button type="button" class="config-button" id="addLoraBtn" onclick="addLoraByUrl()" style="margin:0;">⬇️ Agregar LoRA</button>
+                            </div>
+                            <small id="addLoraStatus" style="color:#6b7280;display:block;margin-top:6px;">El archivo se descarga en el Colab (a Drive) y queda disponible.</small>
                         </div>
                     </div>
 
                     <!-- 4. ControlNet -->
                     <div class="param-section" data-modes="diplo diplocolab">
                         <h4><span class="section-icon">🎯</span> ControlNet + Imagen de referencia <span style="font-size:11px;color:#999;font-weight:400;">[experimental]</span></h4>
-                        <p class="section-desc">Guía la generación con una imagen tuya. Subís una imagen, elegís un <b>preprocesador</b> (qué se extrae: bordes/Canny, profundidad/Depth, pose/OpenPose…) y con <b>"Ver preprocesado"</b> ves cómo queda ANTES de generar, para entender qué hace. <b>Strength</b> = cuánto la sigue (0.7–0.9). Activá <b>"Usar ControlNet"</b> para que entre en la generación.</p>
-                        <label style="display:flex;align-items:center;gap:8px;margin-bottom:10px;font-weight:600;cursor:pointer;">
-                            <input type="checkbox" id="useControlnet"> Usar ControlNet en la generación
-                        </label>
+                        <p class="section-desc">Guía la generación con una imagen tuya. <b>Con solo subir una imagen, el ControlNet se activa automáticamente</b> y entra en la próxima generación. Elegís un <b>preprocesador</b> y la <b>vista previa se actualiza sola</b>. Para sacarlo, usá "Quitar imagen". <b>Ojo:</b> el <b>ControlNet strength</b> NO cambia la vista previa (solo se nota en el resultado final); la preview cambia con el <i>preprocesador</i>, los <i>thresholds</i> de Canny y la <i>resolución</i>.</p>
                         <input type="hidden" id="refImage" value="">
                         <div class="form-group">
-                            <label>Imagen de referencia <span class="info-tip" data-tip="Subí una imagen; se manda al ComfyUI del Colab y se usa como base del preprocesador/ControlNet">i</span></label>
-                            <input type="file" id="refImageFile" accept="image/*">
-                            <small id="refImageStatus" style="color:#6b7280;display:block;margin-top:4px;"></small>
+                            <label>📎 Subir imagen de referencia <span class="info-tip" data-tip="Subí una imagen y el ControlNet se activa solo. Se manda al ComfyUI del Colab y es la base del preprocesador. Recomendado: una foto/dibujo con estructura clara.">i</span></label>
+                            <div class="file-upload-box">
+                                <input type="file" id="refImageFile" accept="image/*">
+                                <small id="refImageStatus" style="color:#6b7280;display:block;margin-top:6px;">Ningún archivo: ControlNet desactivado (txt2img puro).</small>
+                            </div>
                         </div>
-                        <div style="margin:8px 0;">
+                        <div class="cn-badge" id="cnBadge">✅ ControlNet activado — se usará esta imagen <button type="button" onclick="clearRefImage()">Quitar imagen</button></div>
+                        <div style="margin:8px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
                             <button type="button" class="config-button" onclick="previewPreprocess()" style="margin:0;">🔍 Ver preprocesado</button>
-                            <small id="preprocessStatus" style="color:#6b7280;margin-left:8px;"></small>
+                            <button type="button" class="guide-btn" onclick="openPreprocGuide()">📖 Guía de preprocesadores</button>
+                            <small id="preprocessStatus" style="color:#6b7280;margin-left:4px;"></small>
                         </div>
                         <div id="preprocessPreviewWrap" style="display:none;margin:10px 0;">
                             <small style="color:#6b7280;">Vista previa del preprocesado (lo que "ve" el ControlNet):</small><br>
@@ -296,7 +348,7 @@
                                 <input type="text" id="refImageName" value="DSC09211 (2).jpg">
                             </div>
                             <div class="form-group">
-                                <label>Preprocessor <span class="info-tip" data-tip="Tipo de preprocesador ControlNet. Canny = bordes, Depth = profundidad, OpenPose = pose humana, HED = bordes suaves">i</span></label>
+                                <label>Preprocessor <span class="info-tip" data-tip="Qué se extrae de la referencia. Canny = bordes, Depth = profundidad, OpenPose = pose, HED = bordes suaves. Recomendado: Canny para formas definidas (mirá la 📖 Guía).">i</span></label>
                                 <select id="preprocessor">
                                     <option value="CannyEdgePreprocessor" selected>Canny Edge</option>
                                     <option value="DepthAnythingPreprocessor">Depth Anything</option>
@@ -309,6 +361,7 @@
                                 </select>
                             </div>
                         </div>
+                        <div id="preprocLegend" class="preproc-legend"><!-- leyenda de colores (preproc.js) --></div>
                         <div class="form-row">
                             <div class="form-group">
                                 <label>Low threshold <span class="info-tip" data-tip="Umbral bajo de Canny. Pixeles debajo de este valor NO son bordes. 50-150 es lo normal">i</span></label>
@@ -325,7 +378,7 @@
                         </div>
                         <div class="form-row">
                             <div class="form-group">
-                                <label>ControlNet strength <span class="info-tip" data-tip="Qué tanto influye ControlNet en la generación. 0 = ignora la referencia, 1 = sigue fielmente. 0.7-0.95 es lo normal">i</span></label>
+                                <label>ControlNet strength <span class="info-tip" data-tip="Qué tanto influye ControlNet en la generación. 0 = ignora la referencia, 1 = sigue fielmente. Recomendado: 0.7–0.9.">i</span></label>
                                 <div class="range-row">
                                     <input type="range" id="controlnetStrength" value="0.90" min="0.1" max="1.5" step="0.05">
                                     <span class="range-value" id="controlnetStrengthVal">0.90</span>
@@ -472,7 +525,7 @@
 
                 <div class="seed-group">
                     <div class="form-group">
-                        <label>Semilla <span class="info-tip" data-tip="Semilla aleatoria. -1 = aleatoria cada vez. Fijar un número = resultados reproducibles">i</span></label>
+                        <label>Semilla <span class="info-tip" data-tip="Semilla aleatoria. -1 = aleatoria cada vez. Fijar un número = resultados reproducibles. Recomendado: -1 para explorar, fijá un número cuando te guste un resultado.">i</span></label>
                         <input type="number" id="seed" value="-1" min="-1">
                     </div>
                     <button class="random-button" onclick="randomizeSeed()">🎲 Aleatorio</button>
@@ -502,9 +555,23 @@
         </div>
     </div>
 
+    <!-- ── Modal: Guía de preprocesadores ── -->
+    <div class="modal-overlay" id="preprocGuide" onclick="if(event.target===this)closePreprocGuide()">
+        <div class="modal-card">
+            <div class="modal-head">
+                <h3>📖 Guía de preprocesadores ControlNet</h3>
+                <button class="modal-close" onclick="closePreprocGuide()">&times;</button>
+            </div>
+            <div class="modal-body" id="preprocGuideBody">
+                <!-- se llena dinámicamente desde preproc.js (renderPreprocGuide) -->
+            </div>
+        </div>
+    </div>
+
     <script src="js/base-path.js"></script>
     <script src="js/logger.js"></script>
     <script src="js/config.js"></script>
+    <script src="js/preproc.js"></script>
     <script src="js/script.js"></script>
     <script src="js/models.js"></script>
 </body>

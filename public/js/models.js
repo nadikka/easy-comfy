@@ -130,11 +130,13 @@ async function loadPreprocessors(forceReload = false) {
             const opt = document.createElement('option');
             opt.value = name;
             opt.textContent = name;
+            // Colorea por familia (preproc.js) para que la lista no sea un lío
+            if (typeof colorizePreprocOption === 'function') colorizePreprocOption(opt);
             sel.appendChild(opt);
         });
         if (d.preprocessors.includes(current)) sel.value = current;
         preprocessorsLoaded = true;
-        Logger.info(`✓ ${d.preprocessors.length} preprocesadores cargados`);
+        Logger.info(`✓ ${d.preprocessors.length} preprocesadores cargados (coloreados por familia)`);
     } catch (e) {
         Logger.warning('No se pudieron cargar preprocesadores: ' + e.message);
     }

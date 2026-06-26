@@ -229,11 +229,12 @@ function collectParams() {
             // Dims
             width: getVal('diploWidth', 1024),
             height: getVal('diploHeight', 640),
-            // Prompt
-            negative_prompt: getVal('diploNegPrompt', 'blurry, ugly, low quality'),
+            // Prompt (negativo unificado: la caja de abajo, compartida por todos los modos)
+            negative_prompt: getVal('negPrompt', 'blurry, ugly, low quality'),
             tile_prompt: getVal('tilePrompt', null),
-            // LoRA
-            lora_name: getVal('loraName', 'Bradhamel_art_style.safetensors'),
+            // LoRA (use_lora viene del toggle; el server inyecta el nodo solo si está ON + hay nombre)
+            use_lora: !!(document.getElementById('useLora') && document.getElementById('useLora').checked),
+            lora_name: getVal('loraName', ''),
             lora_strength_model: getVal('loraStrengthModel', 0.80),
             lora_strength_clip: getVal('loraStrengthClip', 1.00),
             // ControlNet — ref_image = imagen subida (hidden refImage) o nombre manual (modo diplo)
@@ -293,16 +294,12 @@ document.getElementById('generateButton').addEventListener('click', () => {
         document.getElementById('seed').value = params.seed;
     }
 
-    // Si estamos en DIPLO Colab y el toggle ControlNet está activo, usamos el workflow CN.
+    // En DIPLO Colab, si hay una imagen de referencia subida, ControlNet se activa solo.
     let effectiveWorkflow = currentWorkflow;
-    const cnToggle = document.getElementById('useControlnet');
-    if (currentWorkflow === 'diplocolab' && cnToggle && cnToggle.checked) {
-        if (!params.ref_image) {
-            alert('Activaste ControlNet pero no subiste una imagen de referencia. Subí una primero.');
-            genBtn.disabled = false; genBtn.textContent = '🚀 Generar Imagen';
-            return;
-        }
+    const refImg = document.getElementById('refImage');
+    if (currentWorkflow === 'diplocolab' && refImg && refImg.value) {
         effectiveWorkflow = 'diplocolabcn';
+        Logger.info('🎯 ControlNet activo (imagen de referencia subida)');
     }
 
     Logger.info(`📤 [${effectiveWorkflow}] Prompt: "${prompt.substring(0, 50)}${prompt.length > 50 ? '...' : ''}"`);
@@ -347,14 +344,108 @@ document.addEventListener('DOMContentLoaded', () => {
             const d = await resp.json();
             if (d.success && d.name) {
                 document.getElementById('refImage').value = d.name;
-                if (status) status.textContent = `✅ Subida: ${d.name}`;
-                Logger.info(`✓ Imagen de referencia subida: ${d.name}`);
+                if (status) status.textContent = `✅ Subida: ${d.name} — ControlNet activado`;
+                Logger.info(`✓ Imagen de referencia subida: ${d.name} (ControlNet ON)`);
+                setCnActive(true);
+                autoPreviewPreprocess(); // vista previa automática al subir
             } else {
                 if (status) status.textContent = '❌ Error: ' + (d.error || 'desconocido');
             }
         } catch (e) {
             if (status) status.textContent = '❌ Error subiendo: ' + e.message;
         }
+    });
+});
+
+// Muestra/oculta el badge "ControlNet activado"
+function setCnActive(on) {
+    const badge = document.getElementById('cnBadge');
+    if (badge) badge.classList.toggle('on', !!on);
+}
+
+// Quita la imagen de referencia → ControlNet vuelve a OFF (txt2img puro)
+function clearRefImage() {
+    const refImage = document.getElementById('refImage');
+    const fileInput = document.getElementById('refImageFile');
+    const status = document.getElementById('refImageStatus');
+    if (refImage) refImage.value = '';
+    if (fileInput) fileInput.value = '';
+    if (status) status.textContent = 'Ningún archivo: ControlNet desactivado (txt2img puro).';
+    setCnActive(false);
+    const wrap = document.getElementById('preprocessPreviewWrap');
+    if (wrap) wrap.style.display = 'none';
+    Logger.info('🎯 ControlNet desactivado (imagen quitada)');
+}
+
+// ── Agregar un LoRA por URL: lo baja al Colab y refresca el desplegable ──
+async function addLoraByUrl() {
+    const url = (document.getElementById('loraUrl').value || '').trim();
+    const filename = (document.getElementById('loraFilename').value || '').trim();
+    const status = document.getElementById('addLoraStatus');
+    const btn = document.getElementById('addLoraBtn');
+    if (!url) { if (status) status.textContent = '❌ Pegá primero el link del LoRA.'; return; }
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ Bajando...'; }
+    if (status) status.textContent = '⏳ Descargando en el Colab (puede tardar según el tamaño)...';
+    try {
+        const resp = await fetch(apiUrl('/api/add-lora'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url, filename })
+        });
+        const d = await resp.json();
+        if (d.success && d.name) {
+            if (status) status.textContent = `✅ Agregado: ${d.name}. Refrescando lista...`;
+            Logger.info(`✓ LoRA agregado al Colab: ${d.name}`);
+            document.getElementById('loraUrl').value = '';
+            document.getElementById('loraFilename').value = '';
+            // Refrescar el desplegable de LoRAs desde el backend y seleccionar el nuevo
+            if (typeof loadDiploModels === 'function') {
+                await loadDiploModels(true);
+                const sel = document.getElementById('loraName');
+                if (sel) {
+                    const opt = Array.from(sel.options).find(o => o.value === d.name);
+                    if (opt) sel.value = d.name;
+                }
+            }
+            const useLora = document.getElementById('useLora');
+            if (useLora) useLora.checked = true; // lo dejo activado, listo para usar
+            if (status) status.textContent = `✅ Listo: ${d.name} — seleccionado y "Usar LoRA" activado.`;
+        } else {
+            if (status) status.textContent = '❌ ' + (d.error || 'no se pudo agregar');
+        }
+    } catch (e) {
+        if (status) status.textContent = '❌ ' + e.message;
+    } finally {
+        if (btn) { btn.disabled = false; btn.textContent = '⬇️ Agregar LoRA'; }
+    }
+}
+
+// ── Modal: guía de preprocesadores ──
+function openPreprocGuide() {
+    if (typeof renderPreprocGuide === 'function') renderPreprocGuide();
+    const m = document.getElementById('preprocGuide');
+    if (m) m.classList.add('open');
+}
+function closePreprocGuide() {
+    const m = document.getElementById('preprocGuide');
+    if (m) m.classList.remove('open');
+}
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closePreprocGuide(); });
+
+// Auto-preview: corre la vista previa sola (con debounce) si hay imagen subida.
+let _previewTimer = null;
+function autoPreviewPreprocess() {
+    const ri = document.getElementById('refImage');
+    if (!ri || !ri.value) return; // sin imagen, no hay nada que previsualizar
+    clearTimeout(_previewTimer);
+    _previewTimer = setTimeout(() => previewPreprocess(), 350);
+}
+
+// Listeners: al cambiar preprocesador / thresholds / resolución, refresca la preview sola.
+document.addEventListener('DOMContentLoaded', () => {
+    ['preprocessor', 'preprocessorLow', 'preprocessorHigh', 'preprocessorRes', 'scaleBy'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('change', autoPreviewPreprocess);
     });
 });
 
