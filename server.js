@@ -504,7 +504,11 @@ function extractList(objectInfo, nodeClass, field) {
         const req = node && node.input && (node.input.required || {});
         const opt = node && node.input && (node.input.optional || {});
         const entry = (req && req[field]) || (opt && opt[field]);
-        if (entry && Array.isArray(entry[0])) return entry[0];
+        if (!entry) return [];
+        // Formato viejo: entry[0] es directamente la lista de opciones.
+        if (Array.isArray(entry[0])) return entry[0];
+        // Formato nuevo (ComfyUI 0.26+): ["COMBO", { options: [...] }].
+        if (entry[0] === 'COMBO' && entry[1] && Array.isArray(entry[1].options)) return entry[1].options;
     } catch (e) { /* nodo no instalado */ }
     return [];
 }

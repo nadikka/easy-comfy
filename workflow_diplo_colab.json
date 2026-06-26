@@ -67,18 +67,10 @@
   "92": {
     "inputs": {
       "samples": ["3", 0],
-      "vae": ["17", 0],
-      "mode": "tiled",
-      "use_tiling": false,
-      "tile_size": 512,
-      "overlap_x": 64,
-      "overlap_y": 64,
-      "temporal_size": 8,
-      "select_decoder": "default",
-      "pixel_shift_down_right": false
+      "vae": ["17", 0]
     },
-    "class_type": "VAEDecodePlusPlus",
-    "_meta": {"title": "VAE Decode++ (base)"}
+    "class_type": "VAEDecode",
+    "_meta": {"title": "VAE Decode (base)"}
   },
   "9": {
     "inputs": {
