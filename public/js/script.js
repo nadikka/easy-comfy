@@ -447,8 +447,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const d = await resp.json();
             if (d.success && d.name) {
                 document.getElementById('refImage').value = d.name;
-                if (status) status.textContent = `✅ Subida: ${d.name} — ControlNet activado`;
-                Logger.info(`✓ Imagen de referencia subida: ${d.name} (ControlNet ON)`);
+                // Unificación: la misma imagen de partida sirve para Describir (Qwen) sin re-subir.
+                const qh = document.getElementById('qwenImage');
+                if (qh) qh.value = d.name;
+                if (status) status.textContent = `✅ Subida: ${d.name}`;
+                Logger.info(`✓ Imagen de partida subida: ${d.name}`);
                 setCnActive(true);
                 autoPreviewPreprocess(); // vista previa automática al subir
             } else {

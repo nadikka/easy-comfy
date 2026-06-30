@@ -113,6 +113,28 @@
         @media(max-width:920px){ .shell{ grid-template-columns:1fr; } .col-canvas{ position:static !important; } }
         .col-canvas{ position:sticky; top:16px; }
 
+        /* ── Reordenamiento del panel "Crear" (flujo natural, SIN mover el DOM) ──
+           col-controls es flex; #diploParams pasa a display:contents para que sus
+           secciones entren al mismo flujo flex y se puedan intercalar por `order`. */
+        .col-controls{ display:flex; flex-direction:column; }
+        #diploParams.visible{ display:contents; }
+        .param-section{ order:9; }   /* base; los con id se piso abajo */
+        #welcome{ order:1; }
+        .intent-wrap{ order:2; }
+        #sec-cn{ order:3; }            /* imagen de partida */
+        #sec-qwen{ order:4; }          /* describir → prompt */
+        .prompt-block{ order:5; }
+        #sec-prompt-builder{ order:6; }/* constructor, pegado al prompt */
+        #sec-lora{ order:7; }          /* LoRA arriba */
+        #sec-ksampler{ order:8; }      /* KSampler, tras el prompt */
+        #sec-upscale{ order:9; }
+        #sec-size{ order:19; }         /* Tamaño = último nodo (antes de seed/generar) */
+        #sec-qwen-edit{ order:11; }    /* (solo modo Editar) */
+        #sec-restaurar{ order:12; }    /* (solo modo Restaurar) */
+        #simpleParams{ order:13; }
+        .seed-group{ order:20; }
+        .primary{ order:21; }
+
         /* ════════════════ Bienvenida "¿Qué es esto?" (capa Aprender) ════════════════ */
         .welcome{
             background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
@@ -182,7 +204,8 @@
 
         /* ════════════════ Secciones de parámetros (cards / acordeones) ════════════════ */
         #diploParams{ display:none; }
-        #diploParams.visible{ display:block; }
+        /* display:contents → sus secciones entran al flex de .col-controls para el reorden por `order` */
+        #diploParams.visible{ display:contents; }
         #simpleParams{
             background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
             padding:16px; margin-bottom:14px;
@@ -465,12 +488,11 @@
                 <div class="intent-wrap">
                     <span class="ttl">¿Qué querés hacer?</span>
                     <div class="intent" id="intentSel">
-                        <button class="active" data-intent="generar" onclick="setIntent('generar')"><span class="em">🎨</span>Generar</button>
-                        <button data-intent="guiar" onclick="setIntent('guiar')"><span class="em">🎯</span>Guiar con imagen</button>
+                        <button class="active" data-intent="generar" onclick="setIntent('generar')"><span class="em">🎨</span>Crear</button>
                         <button data-intent="editar" onclick="setIntent('editar')"><span class="em">✏️</span>Editar <span class="chip warn">L4</span></button>
                         <button data-intent="restaurar" onclick="setIntent('restaurar')"><span class="em">🔧</span>Restaurar</button>
                     </div>
-                    <p id="intentDesc">Generás una imagen desde cero, escribiendo una descripción.</p>
+                    <p id="intentDesc">Creás una imagen desde una descripción (y, si querés, partiendo de una imagen).</p>
                 </div>
 
                 <!-- Caja principal: Prompt + Negativo (gen-flow: se oculta en "Editar") -->
@@ -533,7 +555,7 @@
                 <div id="diploParams">
 
                     <!-- 1. Dimensiones (gen-flow; siempre abierta) -->
-                    <div class="param-section gen-flow" data-modes="diplocolab diplo">
+                    <div class="param-section gen-flow" id="sec-size" data-modes="diplocolab diplo">
                         <h4><span class="section-icon">📐</span> Tamaño</h4>
                         <p class="section-desc">El tamaño base en píxeles de la generación. Más grande = más lento y más VRAM. Los defaults (1024×640) andan bien. El prompt y el negativo se escriben en la caja grande de arriba.</p>
                         <div class="form-row">
@@ -615,24 +637,32 @@
                         </div>
                     </div>
 
-                    <!-- 🎯 GUIAR con imagen (ControlNet) — intención "Guiar con imagen" -->
-                    <div class="param-section flow-guiar collapsible" id="sec-cn" data-modes="diplo diplocolab">
-                        <h4 onclick="toggleSection(this)"><span class="section-icon">🎯</span> Guiar con una imagen (ControlNet) <span style="font-size:11px;color:var(--text-faint);font-weight:400;">[experimental]</span></h4>
-                        <p class="section-desc">Guía la generación con una imagen tuya. <b>Con solo subir una imagen, el ControlNet se activa automáticamente</b> y entra en la próxima generación. Elegís un <b>preprocesador</b> y la <b>vista previa se actualiza sola</b>. Para sacarlo, usá "Quitar imagen". <b>Ojo:</b> el <b>ControlNet strength</b> NO cambia la vista previa (solo se nota en el resultado final); la preview cambia con el <i>preprocesador</i>, los <i>thresholds</i> de Canny y la <i>resolución</i>.</p>
+                    <!-- 📷 IMAGEN DE PARTIDA (opcional) — antes "Guiar". Subís UNA imagen y elegís qué hacer con ella. -->
+                    <div class="param-section gen-flow" id="sec-cn" data-modes="diplo diplocolab">
+                        <h4><span class="section-icon">📷</span> ¿Partís de una imagen? <span style="font-size:12px;color:var(--text-faint);font-weight:400;">(opcional)</span></h4>
+                        <p class="section-desc">Subí una imagen (una sola) y, abajo, elegí <b>qué hacer con ella</b>. Hay tres formas distintas:<br>
+                        🔎 <b>Describirla</b> (te arma el prompt, abajo)<br>
+                        🖼️ <b>Usarla de base</b> (img2img: variás/mejorás ESA imagen)<br>
+                        🎯 <b>Copiar su estructura</b> (ControlNet: pose/bordes/profundidad)<br>
+                        Si no subís nada, generás desde cero con el prompt.</p>
                         <input type="hidden" id="refImage" value="">
                         <div class="form-group">
-                            <label>📎 Subir imagen de referencia <span class="info-tip" data-tip="Subí una imagen y el ControlNet se activa solo. Se manda al ComfyUI del Colab y es la base del preprocesador. Recomendado: una foto/dibujo con estructura clara.">i</span></label>
+                            <label>📎 Imagen de partida <span class="info-tip" data-tip="Se sube al ComfyUI del Colab. La misma imagen sirve para describirla, usarla de base (img2img) o copiar su estructura (ControlNet).">i</span></label>
                             <div class="file-upload-box">
                                 <input type="file" id="refImageFile" accept="image/*">
-                                <small id="refImageStatus" style="display:block;margin-top:6px;">Ningún archivo: ControlNet desactivado (txt2img puro).</small>
+                                <small id="refImageStatus" style="display:block;margin-top:6px;">Sin imagen: generás desde cero (txt2img puro).</small>
                             </div>
                         </div>
-                        <div class="cn-badge" id="cnBadge">✅ ControlNet activado — se usará esta imagen <button type="button" onclick="clearRefImage()">Quitar imagen</button></div>
-                        <!-- img2img: usar la imagen subida como base (latente inicial) en vez de ControlNet -->
+                        <div class="cn-badge" id="cnBadge">✅ Imagen cargada — se usará en la próxima generación <button type="button" onclick="clearRefImage()">Quitar imagen</button></div>
+                        <!-- 🎯/🖼️ Dos acciones excluyentes para la imagen subida (cada una con su propia explicación) -->
                         <div data-modes="diplocolab" id="img2imgRow">
                             <label style="display:flex;align-items:center;gap:8px;margin:6px 0;font-weight:600;cursor:pointer;">
-                                <input type="checkbox" id="useImg2img" style="width:auto;"> Usar la imagen como <b>img2img</b> (base) en vez de ControlNet
-                                <span class="info-tip" data-tip="Si está activo Y subiste una imagen, esa imagen es el punto de partida (latente inicial) y el modelo la modifica según el Denoise: bajo (~0.3) mantiene la imagen/identidad, alto (~0.6) cambia más. Mejor que ControlNet para variar expresiones del mismo personaje. Recomendado: denoise 0.3–0.5.">i</span>
+                                <input type="checkbox" id="useControlnet" checked style="width:auto;"> 🎯 Copiar su estructura <b>(ControlNet)</b>
+                                <span class="info-tip" data-tip="La imagen NO aparece en el resultado: se le extrae la ESTRUCTURA (bordes, pose o profundidad, con el preprocesador de abajo) y la imagen nueva la respeta. Tu prompt define el contenido; la foto define la forma. Ej: tu personaje en la pose exacta de la foto, o el contorno de un edificio. Fuerza con 'ControlNet strength'.">i</span>
+                            </label>
+                            <label style="display:flex;align-items:center;gap:8px;margin:6px 0;font-weight:600;cursor:pointer;">
+                                <input type="checkbox" id="useImg2img" style="width:auto;"> 🖼️ Usarla de base <b>(img2img)</b>
+                                <span class="info-tip" data-tip="La imagen ES el punto de partida y el modelo la REPINTA según el Denoise: bajo (~0.3) mantiene casi todo (variar expresiones del mismo personaje, mejorar/restaurar), alto (~0.6) cambia bastante. El resultado conserva la composición de tu foto. Acá NO se usa el preprocesador. Recomendado: denoise 0.3–0.5.">i</span>
                             </label>
                         </div>
                         <div style="margin:8px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">

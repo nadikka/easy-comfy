@@ -28,8 +28,7 @@
 
     // ── Selector de intención ─────────────────────────────────────────────────
     const INTENT_DESC = {
-        generar:   'Generás una imagen desde cero, escribiendo una descripción.',
-        guiar:     'Subís una imagen y la nueva respeta su estructura (pose, bordes, profundidad).',
+        generar:   'Creás una imagen desde una descripción (y, si querés, partiendo de una imagen).',
         editar:    'Subís una imagen y le cambiás algo puntual con una instrucción. Necesita L4.',
         restaurar: 'Subís una foto y la agrandás reconstruyendo detalle real (img2img + upscale).'
     };
@@ -86,6 +85,14 @@
         let savedIntent = null;
         try { savedIntent = localStorage.getItem('cw-intent'); } catch (e) {}
         setIntent(savedIntent || 'generar');
+
+        // Las dos acciones de la imagen (ControlNet / img2img) son excluyentes.
+        var cnChk = document.getElementById('useControlnet');
+        var i2iChk = document.getElementById('useImg2img');
+        if (cnChk && i2iChk) {
+            cnChk.addEventListener('change', function () { if (cnChk.checked) i2iChk.checked = false; });
+            i2iChk.addEventListener('change', function () { if (i2iChk.checked) cnChk.checked = false; });
+        }
 
         // Cerrar el popover de config al click afuera.
         document.addEventListener('click', function (e) {
