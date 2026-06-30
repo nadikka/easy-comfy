@@ -1,25 +1,38 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ComfyUI - AI Image Generation</title>
+    <title>comfyweb — generación de imágenes con IA</title>
+    <!-- Anti-flash: aplica el tema guardado ANTES de pintar -->
+    <script>(function(){try{var t=localStorage.getItem('cw-theme');if(!t){t=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light';}document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+    <link rel="stylesheet" href="css/app.css">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh; padding: 20px;
+            min-height: 100vh; padding: 10px;
         }
         .container { max-width: 1200px; margin: 0 auto; background: white; border-radius: 12px; box-shadow: 0 10px 40px rgba(0,0,0,0.2); overflow: hidden; }
-        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px 30px; display: flex; justify-content: space-between; align-items: center; }
-        .header h1 { font-size: 24px; font-weight: 600; }
+        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 14px 30px; display: flex; justify-content: space-between; align-items: center; }
+        .header h1 { font-size: 28px; font-weight: 700; letter-spacing: -0.5px; }
         .status-indicator { width: 12px; height: 12px; border-radius: 50%; display: inline-block; margin-right: 8px; }
         .status-connected { background: #4CAF50; box-shadow: 0 0 10px #4CAF50; }
         .status-disconnected { background: #f44336; box-shadow: 0 0 10px #f44336; }
-        .content { padding: 30px; }
-        .config-section { background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 25px; }
+        .content { padding: 18px 30px 30px; }
+        .config-section { background: #f8f9fa; padding: 16px 20px; border-radius: 8px; margin-bottom: 18px; }
         .config-section h3 { font-size: 16px; margin-bottom: 15px; color: #333; }
+        /* ── Jerarquía de títulos de sección: acento de color + mayúsculas ── */
+        .generation-section h3, .config-section h3 {
+            position: relative; padding-left: 12px; text-transform: uppercase;
+            letter-spacing: 0.5px; font-weight: 700;
+        }
+        .generation-section h3::before, .config-section h3::before {
+            content: ''; position: absolute; left: 0; top: 50%; transform: translateY(-50%);
+            width: 4px; height: 1.1em; border-radius: 3px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
         .preset-buttons { display: flex; gap: 10px; margin-bottom: 15px; }
         .preset-button { padding: 8px 16px; background: #2196F3; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; transition: background 0.3s; }
         .preset-button:hover { background: #0b7dda; }
@@ -28,8 +41,8 @@
         .config-input { flex: 1; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; }
         .config-button { padding: 10px 20px; background: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500; }
         .config-button:hover { background: #45a049; }
-        .generation-section { background: #fff; padding: 25px; border-radius: 8px; border: 1px solid #e0e0e0; margin-bottom: 25px; }
-        .generation-section h3 { font-size: 18px; margin-bottom: 20px; color: #333; }
+        .generation-section { background: #fff; padding: 20px 25px; border-radius: 8px; border: 1px solid #e0e0e0; margin-bottom: 18px; }
+        .generation-section h3 { font-size: 19px; margin-bottom: 18px; color: #222; }
         .workflow-selector { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
         .workflow-btn { padding: 10px 20px; background: #e9ecef; color: #495057; border: 2px solid #dee2e6; border-radius: 8px; cursor: pointer; font-size: 14px; transition: all 0.3s; text-align: left; }
         .workflow-btn:hover { background: #dde2e6; }
@@ -93,6 +106,30 @@
         .section-desc { font-size: 12px; color: #6b7280; margin: 2px 0 12px 0; line-height: 1.4; background: #f8f9fb; border-left: 3px solid #667eea; padding: 7px 10px; border-radius: 0 6px 6px 0; }
         /* Secciones que solo aplican a ciertos workflows (se ocultan por JS segun el modo) */
         .param-section[data-hidden="1"] { display: none; }
+        /* El asistente puede apagar una seccion (se compone con data-hidden de los modos) */
+        .param-section[data-wiz="off"] { display: none !important; }
+
+        /* ── Asistente / wizard de preguntas ── */
+        .wizard { background: linear-gradient(135deg, #eef1fb 0%, #f3eefb 100%); border: 1px solid #d8def0;
+                  border-radius: 10px; padding: 16px 18px; margin-bottom: 18px; }
+        .wizard h3 { font-size: 15px; font-weight: 700; color: #4a4a6a; margin-bottom: 4px;
+                     text-transform: uppercase; letter-spacing: 0.5px; }
+        .wizard .wiz-sub { font-size: 12px; color: #6b7280; margin-bottom: 12px; }
+        .wiz-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; }
+        .wiz-q { display: flex; align-items: flex-start; gap: 9px; background: #fff; border: 1px solid #e2e6f2;
+                 border-radius: 8px; padding: 10px 12px; cursor: pointer; transition: border-color .2s, box-shadow .2s; }
+        .wiz-q:hover { border-color: #b9c2ea; }
+        .wiz-q input { margin-top: 2px; width: 16px; height: 16px; cursor: pointer; flex-shrink: 0; }
+        .wiz-q .wq-txt { font-size: 13px; color: #333; font-weight: 600; line-height: 1.25; }
+        .wiz-q .wq-cost { font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 10px; margin-left: 4px; }
+        .wq-cost.low  { background: #e6f4ea; color: #2e7d32; }
+        .wq-cost.mid  { background: #fff4e0; color: #e08600; }
+        .wq-cost.high { background: #fde7e7; color: #c62828; }
+        .wiz-q .wq-desc { font-size: 11px; color: #777; font-weight: 400; margin-top: 2px; line-height: 1.3; }
+        .wiz-weight { margin-top: 12px; font-size: 12px; color: #555; display: flex; align-items: center; gap: 8px; }
+        .wiz-weight .bar { flex: 1; height: 8px; background: #e2e6f2; border-radius: 5px; overflow: hidden; }
+        .wiz-weight .bar > div { height: 100%; width: 0%; border-radius: 5px;
+                                 background: linear-gradient(90deg, #4CAF50, #ff9800, #f44336); transition: width .3s; }
 
         /* ── Caja de prompt principal (prompt + negativo juntos, ancho completo, abajo) ── */
         .prompt-block { background: #f4f6fb; border: 1px solid #d8def0; border-radius: 10px; padding: 18px 18px 14px; margin: 6px 0 18px; }
@@ -139,10 +176,11 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>🎨 ComfyUI - AI Image Generation</h1>
-            <div>
+            <h1>🎨 comfyweb</h1>
+            <div style="display:flex;align-items:center;gap:10px;">
                 <span id="statusIndicator" class="status-indicator status-disconnected"></span>
-                <span id="statusText">Disconnected</span>
+                <span id="statusText">Conectando…</span>
+                <button type="button" id="themeToggle" onclick="toggleTheme()" title="Cambiar entre modo claro y oscuro" style="background:none;border:1px solid var(--border,#ddd);border-radius:6px;padding:4px 8px;cursor:pointer;font-size:14px;line-height:1;">🌙</button>
             </div>
         </div>
         <div class="content">
@@ -201,13 +239,68 @@
                         <div class="form-group"><label>Steps: <span class="info-tip" data-tip="Pasos de muestreo. Z-Image Turbo va bien con 8. Más = más lento.">i</span></label><input type="number" id="steps" value="8" min="1" max="150"></div>
                     </div>
                     <div class="form-row">
-                        <div class="form-group"><label>Ancho:</label><input type="number" id="width" value="1024" min="64" max="2048" step="8"></div>
-                        <div class="form-group"><label>Alto:</label><input type="number" id="height" value="640" min="64" max="2048" step="8"></div>
+                        <div class="form-group"><label>Ancho <span class="info-tip" data-tip="Ancho en píxeles de la imagen. Más grande = más detalle pero más lento y más VRAM. 1024 anda bien; arriba de ~1536 la T4 sufre.">i</span></label><input type="number" id="width" value="1024" min="64" max="2048" step="8"></div>
+                        <div class="form-group"><label>Alto <span class="info-tip" data-tip="Alto en píxeles de la imagen. Mismo criterio que el ancho. La relación ancho×alto define el formato (1024×640 = panorámico).">i</span></label><input type="number" id="height" value="640" min="64" max="2048" step="8"></div>
                     </div>
                 </div>
 
                 <!-- ── DIPLO workflow params ── -->
                 <div id="diploParams">
+                    <!-- 0. Asistente: preguntas que despliegan/ocultan secciones (nodos) -->
+                    <div class="wizard" id="wizard">
+                        <h3>🧭 Asistente</h3>
+                        <p class="wiz-sub">Marcá qué necesitás y se despliegan solo esas secciones. Cada opción suma "peso" (VRAM + tiempo).</p>
+                        <div class="wiz-grid">
+                            <label class="wiz-q">
+                                <input type="checkbox" id="wizLora" data-target="sec-lora" data-cost="1">
+                                <span>
+                                    <span class="wq-txt">¿Personaje o estilo entrenado? <span class="wq-cost low">LoRA · liviano</span></span>
+                                    <span class="wq-desc">Aplica una LoRA (ej. una de Elena) sobre el modelo base.</span>
+                                </span>
+                            </label>
+                            <label class="wiz-q">
+                                <input type="checkbox" id="wizCn" data-target="sec-cn" data-cost="3">
+                                <span>
+                                    <span class="wq-txt">¿Guiar con una imagen de referencia? <span class="wq-cost high">ControlNet · img2img</span></span>
+                                    <span class="wq-desc">Subir una imagen para guiar la composición (pose/bordes/profundidad) o usarla como base (img2img).</span>
+                                </span>
+                            </label>
+                            <label class="wiz-q">
+                                <input type="checkbox" id="wizUpscale" data-target="sec-upscale" data-cost="3">
+                                <span>
+                                    <span class="wq-txt">¿Más resolución / detalle? <span class="wq-cost high">Upscale · pesado</span></span>
+                                    <span class="wq-desc">Agranda la imagen final con un modelo de upscale.</span>
+                                </span>
+                            </label>
+                            <label class="wiz-q">
+                                <input type="checkbox" id="wizAdvanced" data-target="sec-ksampler" data-cost="0">
+                                <span>
+                                    <span class="wq-txt">¿Ajustar parámetros avanzados? <span class="wq-cost low">sampler/steps</span></span>
+                                    <span class="wq-desc">Muestra el KSampler (steps, cfg, sampler, seed, denoise).</span>
+                                </span>
+                            </label>
+                            <label class="wiz-q">
+                                <input type="checkbox" id="wizQwen" data-target="sec-qwen" data-cost="1">
+                                <span>
+                                    <span class="wq-txt">¿Describir una imagen → prompt? <span class="wq-cost low">Qwen-VL · liviano</span></span>
+                                    <span class="wq-desc">Subís una imagen y un modelo de visión te arma el prompt. No genera nada, solo describe.</span>
+                                </span>
+                            </label>
+                            <label class="wiz-q">
+                                <input type="checkbox" id="wizQwenEdit" data-target="sec-qwen-edit" data-cost="3">
+                                <span>
+                                    <span class="wq-txt">¿Editar una imagen con una instrucción? <span class="wq-cost high">Qwen-Image-Edit · pesado</span></span>
+                                    <span class="wq-desc">Subís una imagen + un texto ("ponele pelo azul") y devuelve una imagen nueva editada. Para los estados de Elena.</span>
+                                </span>
+                            </label>
+                        </div>
+                        <div class="wiz-weight">
+                            <span>Peso estimado:</span>
+                            <span class="bar"><div id="wizBar"></div></span>
+                            <span id="wizWeightLabel" style="font-weight:600; min-width:64px; text-align:right;">liviano</span>
+                        </div>
+                    </div>
+
                     <!-- 1. Dimensiones (el prompt + negativo van en la caja de abajo) -->
                     <div class="param-section" data-modes="diplocolab diplo">
                         <h4><span class="section-icon">📐</span> Dimensiones</h4>
@@ -221,6 +314,10 @@
                                 <label>Alto base <span class="info-tip" data-tip="Alto en píxeles de la generación inicial con KSampler (EmptySD3LatentImage)">i</span></label>
                                 <input type="number" id="diploHeight" value="640" min="256" max="2048" step="8">
                             </div>
+                            <div class="form-group">
+                                <label>Cantidad <span class="info-tip" data-tip="Cuántas imágenes generar en una pasada (batch_size). 1 = una. Más = más VRAM/tiempo. Se guardan todas; el panel muestra la última.">i</span></label>
+                                <input type="number" id="diploBatch" value="1" min="1" max="8" step="1">
+                            </div>
                         </div>
                         <div class="form-group" data-modes="diplo">
                             <label>Prompt para tile refine (opcional) <span class="info-tip" data-tip="Prompt separado para el paso de refinado con tiles. Si se deja vacío, usa el prompt principal">i</span></label>
@@ -229,7 +326,7 @@
                     </div>
 
                     <!-- 2. KSampler -->
-                    <div class="param-section" data-modes="diplocolab diplo">
+                    <div class="param-section" id="sec-ksampler" data-modes="diplocolab diplo">
                         <h4><span class="section-icon">⚙️</span> KSampler (generación base)</h4>
                         <p class="section-desc">El corazón del proceso: convierte el texto en imagen muestreando ruido. <b>Steps</b> = cuántas iteraciones (Z-Image Turbo va con ~8). <b>CFG</b> = qué tanto obedece el prompt (Turbo usa 1). <b>Sampler/Scheduler</b> = el algoritmo (euler/simple es seguro). Los dropdowns se llenan solos con lo que tiene el backend. Tocá si querés experimentar; con los defaults ya sale bien.</p>
                         <div class="form-row">
@@ -243,7 +340,7 @@
                             </div>
                             <div class="form-group">
                                 <label>Denoise <span class="info-tip" data-tip="Fuerza de eliminación de ruido. 1.0 = generación desde cero, 0.5 = mantiene 50% de la imagen original. Para txt2img puro: 1.0">i</span></label>
-                                <input type="number" id="diploDenoise" value="0.55" min="0.05" max="1" step="0.05">
+                                <input type="number" id="diploDenoise" value="1.0" min="0.05" max="1" step="0.05">
                             </div>
                         </div>
                         <div class="form-row">
@@ -281,7 +378,7 @@
                     </div>
 
                     <!-- 3. LoRA -->
-                    <div class="param-section" data-modes="diplocolab diplo">
+                    <div class="param-section" id="sec-lora" data-modes="diplocolab diplo">
                         <h4><span class="section-icon">🧩</span> LoRA</h4>
                         <p class="section-desc">Inyecta un estilo entrenado aparte (un .safetensors) sobre el modelo. Activá <b>"Usar LoRA"</b>, elegí uno del desplegable y ajustá la fuerza (0.7–0.9 normal). ¿No está en la lista? Pegá el link abajo y se baja al Colab.</p>
                         <label style="display:flex;align-items:center;gap:8px;margin-bottom:10px;font-weight:600;cursor:pointer;">
@@ -300,8 +397,8 @@
                                 </div>
                             </div>
                         </div>
-                        <div class="form-group" data-modes="diplo">
-                            <label>CLIP strength <span class="info-tip" data-tip="Intensidad del LoRA sobre el CLIP (solo DIPLO completo). 1.0 es lo estándar.">i</span></label>
+                        <div class="form-group" data-modes="diplocolab diplo">
+                            <label>CLIP strength <span class="info-tip" data-tip="Intensidad del LoRA sobre el CLIP (el text encoder). 1.0 es lo estándar. 0 = el LoRA no toca el prompt, solo el modelo.">i</span></label>
                             <div class="range-row">
                                 <input type="range" id="loraStrengthClip" value="1.00" min="0.1" max="1.5" step="0.05">
                                 <span class="range-value" id="loraStrengthClipVal">1.00</span>
@@ -320,8 +417,56 @@
                         </div>
                     </div>
 
+                    <!-- 3.5 Describir imagen con IA (Qwen-VL) — herramienta autónoma -->
+                    <div class="param-section" id="sec-qwen" data-modes="diplocolab diplo">
+                        <h4><span class="section-icon">🔎</span> Describir imagen → prompt (Qwen-VL)</h4>
+                        <p class="section-desc">Subí una imagen y un modelo de visión (Qwen3-VL) la describe y te arma un <b>prompt</b>. Sirve para copiar el estilo/contenido de una referencia. La 1ª vez tarda ~1-1½ min (carga el modelo 8B en el Colab). Es independiente: no activa ControlNet.</p>
+                        <input type="hidden" id="qwenImage" value="">
+                        <div class="form-group">
+                            <label>📎 Imagen a describir <span class="info-tip" data-tip="Se sube al ComfyUI del Colab y la mira el Qwen3-VL. No se usa para generar: solo para sacar el prompt.">i</span></label>
+                            <div class="file-upload-box">
+                                <input type="file" id="qwenFile" accept="image/*">
+                                <small id="qwenStatus" style="color:#6b7280;display:block;margin-top:6px;">Subí una imagen para describir.</small>
+                            </div>
+                        </div>
+                        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0;">
+                            <img id="qwenThumb" style="display:none;height:54px;border-radius:6px;border:1px solid #e0e0e0;">
+                            <button type="button" class="config-button" id="qwenBtn" onclick="describeQwen()" style="margin:0;">🔎 Describir → prompt</button>
+                        </div>
+                        <div class="form-group" id="qwenResultWrap" style="display:none;">
+                            <label>Descripción generada (editá si querés)</label>
+                            <textarea id="qwenResult" style="width:100%;min-height:80px;padding:10px;border:1px solid #ddd;border-radius:4px;font-size:13px;font-family:inherit;resize:vertical;"></textarea>
+                            <button type="button" class="config-button" onclick="useQwenPrompt()" style="margin-top:6px;">⬇️ Usar como prompt</button>
+                        </div>
+                    </div>
+
+                    <!-- 3.6 Editar imagen con IA (Qwen-Image-Edit) — herramienta autónoma -->
+                    <div class="param-section" id="sec-qwen-edit" data-modes="diplocolab diplo">
+                        <h4><span class="section-icon">✏️</span> Editar imagen → instrucción (Qwen-Image-Edit)</h4>
+                        <p class="section-desc">Subí una imagen y escribí qué cambiar (ej. <i>"ponele pelo azul"</i>, <i>"cambiá el fondo a un bosque"</i>) y devuelve una <b>imagen nueva editada</b>. Pensado para los estados de Elena. La 1ª vez tarda (carga el modelo Qwen-Image-Edit en el Colab). El resultado entra a la galería como una imagen más.</p>
+                        <input type="hidden" id="editImage" value="">
+                        <div class="form-group">
+                            <label>📎 Imagen a editar <span class="info-tip" data-tip="Se sube al ComfyUI del Colab. Qwen-Image-Edit la toma como base y aplica tu instrucción.">i</span></label>
+                            <div class="file-upload-box">
+                                <input type="file" id="editFile" accept="image/*">
+                                <small id="editStatus" style="color:#6b7280;display:block;margin-top:6px;">Subí una imagen para editar.</small>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>✏️ Instrucción de edición <span class="info-tip" data-tip="Qué querés cambiar, en lenguaje natural. Ej: 'make the hair blue', 'cambiá el fondo a un bosque', 'agregale lentes'.">i</span></label>
+                            <textarea id="editInstruction" placeholder="ponele pelo azul / cambiá el fondo a un bosque / agregale lentes..." style="width:100%;min-height:60px;padding:10px;border:1px solid #ddd;border-radius:4px;font-size:13px;font-family:inherit;resize:vertical;"></textarea>
+                        </div>
+                        <label style="display:flex;align-items:center;gap:8px;margin:4px 0 10px;font-size:13px;cursor:pointer;">
+                            <input type="checkbox" id="editFast" checked> Modo rápido <span style="color:#6b7280;">(LoRA Lightning, 4 pasos — destildá para más calidad y más lento)</span>
+                        </label>
+                        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0;">
+                            <img id="editThumb" style="display:none;height:54px;border-radius:6px;border:1px solid #e0e0e0;">
+                            <button type="button" class="config-button" id="editBtn" onclick="editImageQwen()" style="margin:0;">✏️ Editar imagen</button>
+                        </div>
+                    </div>
+
                     <!-- 4. ControlNet -->
-                    <div class="param-section" data-modes="diplo diplocolab">
+                    <div class="param-section" id="sec-cn" data-modes="diplo diplocolab">
                         <h4><span class="section-icon">🎯</span> ControlNet + Imagen de referencia <span style="font-size:11px;color:#999;font-weight:400;">[experimental]</span></h4>
                         <p class="section-desc">Guía la generación con una imagen tuya. <b>Con solo subir una imagen, el ControlNet se activa automáticamente</b> y entra en la próxima generación. Elegís un <b>preprocesador</b> y la <b>vista previa se actualiza sola</b>. Para sacarlo, usá "Quitar imagen". <b>Ojo:</b> el <b>ControlNet strength</b> NO cambia la vista previa (solo se nota en el resultado final); la preview cambia con el <i>preprocesador</i>, los <i>thresholds</i> de Canny y la <i>resolución</i>.</p>
                         <input type="hidden" id="refImage" value="">
@@ -333,6 +478,13 @@
                             </div>
                         </div>
                         <div class="cn-badge" id="cnBadge">✅ ControlNet activado — se usará esta imagen <button type="button" onclick="clearRefImage()">Quitar imagen</button></div>
+                        <!-- img2img: usar la imagen subida como base (latente inicial) en vez de ControlNet -->
+                        <div data-modes="diplocolab" id="img2imgRow">
+                            <label style="display:flex;align-items:center;gap:8px;margin:6px 0;font-weight:600;cursor:pointer;">
+                                <input type="checkbox" id="useImg2img"> Usar la imagen como <b>img2img</b> (base) en vez de ControlNet
+                                <span class="info-tip" data-tip="Si está activo Y subiste una imagen, esa imagen es el punto de partida (latente inicial) y el modelo la modifica según el Denoise: bajo (~0.3) mantiene la imagen/identidad, alto (~0.6) cambia más. Mejor que ControlNet para variar expresiones del mismo personaje. Recomendado: denoise 0.3–0.5.">i</span>
+                            </label>
+                        </div>
                         <div style="margin:8px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
                             <button type="button" class="config-button" onclick="previewPreprocess()" style="margin:0;">🔍 Ver preprocesado</button>
                             <button type="button" class="guide-btn" onclick="openPreprocGuide()">📖 Guía de preprocesadores</button>
@@ -350,27 +502,21 @@
                             <div class="form-group">
                                 <label>Preprocessor <span class="info-tip" data-tip="Qué se extrae de la referencia. Canny = bordes, Depth = profundidad, OpenPose = pose, HED = bordes suaves. Recomendado: Canny para formas definidas (mirá la 📖 Guía).">i</span></label>
                                 <select id="preprocessor">
-                                    <option value="CannyEdgePreprocessor" selected>Canny Edge</option>
-                                    <option value="DepthAnythingPreprocessor">Depth Anything</option>
-                                    <option value="HEDPreprocessor">HED (bordes suaves)</option>
-                                    <option value="OpenposePreprocessor">OpenPose (pose)</option>
-                                    <option value="LineArtPreprocessor">Line Art</option>
-                                    <option value="Manga2Anime_LineArt_Preprocessor">Anime Line Art</option>
-                                    <option value="MLSDPreprocessor">MLSD (rectas)</option>
-                                    <option value="ScribblePreprocessor">Scribble</option>
+                                    <!-- Los 7 dedicados (con params propios). El resto los agrega el backend (genéricos, vía AIO). -->
+                                    <option value="CannyEdgePreprocessor" selected>⭐ Canny Edge (bordes duros)</option>
+                                    <option value="LineartStandardPreprocessor">⭐ Lineart Standard (líneas)</option>
+                                    <option value="DepthAnythingV2Preprocessor">⭐ Depth Anything V2 (profundidad)</option>
+                                    <option value="MiDaS-NormalMapPreprocessor">⭐ MiDaS Normal Map (relieve)</option>
+                                    <option value="DWPreprocessor">⭐ DWPose (pose cuerpo/manos/cara)</option>
+                                    <option value="HEDPreprocessor">⭐ HED (bordes suaves)</option>
+                                    <option value="TTPlanet_TileGF_Preprocessor">⭐ TTPlanet Tile (detalle/upscale)</option>
                                 </select>
                             </div>
                         </div>
                         <div id="preprocLegend" class="preproc-legend"><!-- leyenda de colores (preproc.js) --></div>
+                        <!-- Parámetros propios del preprocesador elegido (dinámico, preproc.js). Los 7 dedicados muestran sus controles; el resto, aviso de genérico. -->
+                        <div id="ppParams" class="form-row" style="flex-wrap:wrap;"></div>
                         <div class="form-row">
-                            <div class="form-group">
-                                <label>Low threshold <span class="info-tip" data-tip="Umbral bajo de Canny. Pixeles debajo de este valor NO son bordes. 50-150 es lo normal">i</span></label>
-                                <input type="number" id="preprocessorLow" value="100" min="1" max="255">
-                            </div>
-                            <div class="form-group">
-                                <label>High threshold <span class="info-tip" data-tip="Umbral alto de Canny. Pixeles arriba de este valor SÍ son bordes. 150-250 es lo normal">i</span></label>
-                                <input type="number" id="preprocessorHigh" value="200" min="1" max="255">
-                            </div>
                             <div class="form-group">
                                 <label>Resolution <span class="info-tip" data-tip="Resolución a la que se procesa la imagen de referencia. 512 es buen balance calidad/velocidad">i</span></label>
                                 <input type="number" id="preprocessorRes" value="512" min="64" max="2048" step="64">
@@ -447,7 +593,7 @@
                     </div>
 
                     <!-- 6. Output / Upscale -->
-                    <div class="param-section" data-modes="diplocolab diplo">
+                    <div class="param-section" id="sec-upscale" data-modes="diplocolab diplo">
                         <h4><span class="section-icon">📐</span> Output & Upscale</h4>
                         <p class="section-desc">El último paso: agranda la imagen con un modelo de upscale. En <b>DIPLO Colab</b> el upscale es directo 2× (la salida final sale al doble del tamaño base; el "Upscale model" en Modelos avanzados es lo que aplica). Los campos de tamaño/resize de abajo solo cuentan en el DIPLO completo.</p>
                         <div class="form-row" data-modes="diplo">
@@ -486,7 +632,7 @@
                             <div class="form-row">
                                 <div class="form-group">
                                     <label>UNET model <span class="info-tip" data-tip="Modelo de difusión principal. Z-Image-Turbo es rápido y funciona bien con pocos steps. Se llena solo desde ComfyUI">i</span></label>
-                                    <select id="unetName"><option value="z_image_turbo_fp8_e4m3fn.safetensors.safetensors">z_image_turbo_fp8_e4m3fn.safetensors.safetensors</option></select>
+                                    <select id="unetName"><option value="z-image-turbo-fp8-e4m3fn.safetensors">z-image-turbo-fp8-e4m3fn.safetensors</option></select>
                                 </div>
                                 <div class="form-group">
                                     <label>Weight dtype <span class="info-tip" data-tip="Precisión de los pesos: fp8_e4m3fn = rápido y eficiente VRAM, fp16 = más preciso pero más pesado">i</span></label>
@@ -502,11 +648,11 @@
                             <div class="form-row">
                                 <div class="form-group">
                                     <label>VAE model <span class="info-tip" data-tip="Variational Autoencoder. UltraFlux está optimizado para modelos Flux/Z-Image. Se llena solo desde ComfyUI">i</span></label>
-                                    <select id="vaeName"><option value="ultrafluxVAEImproved_v10.safetensors">ultrafluxVAEImproved_v10.safetensors</option></select>
+                                    <select id="vaeName"><option value="ae.safetensors">ae.safetensors</option></select>
                                 </div>
                                 <div class="form-group">
                                     <label>CLIP model <span class="info-tip" data-tip="Text encoder (formato GGUF). Qwen 4B es el CLIP que usa Z-Image-Turbo. Se llena solo desde ComfyUI">i</span></label>
-                                    <select id="clipName"><option value="qwen_3_4b.safetensors.safetensors">qwen_3_4b.safetensors.safetensors</option></select>
+                                    <select id="clipName"><option value="qwen_3_4b_fp8_mixed.safetensors">qwen_3_4b_fp8_mixed.safetensors</option></select>
                                 </div>
                             </div>
                             <div class="form-row">
@@ -546,6 +692,18 @@
 
             <div id="imageContainer"></div>
 
+            <!-- ── Galería: todas las imágenes generadas en esta sesión ── -->
+            <div id="gallerySection" style="display:none; margin-bottom:25px;">
+                <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
+                    <h4 style="margin:0;">🖼️ Galería <span id="galleryCount" style="opacity:.6; font-weight:normal;"></span></h4>
+                    <div>
+                        <button type="button" id="downloadAllBtn" class="info-tip-btn" style="cursor:pointer;">⬇️ Descargar todas (.zip)</button>
+                        <button type="button" id="clearGalleryBtn" class="info-tip-btn" style="cursor:pointer; opacity:.7;">🗑️ Limpiar vista</button>
+                    </div>
+                </div>
+                <div id="gallery" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(120px, 1fr)); gap:8px;"></div>
+            </div>
+
             <div class="log-section">
                 <h4>📋 Node.js Console</h4>
                 <div id="logContainer">
@@ -568,11 +726,15 @@
         </div>
     </div>
 
+    <script src="js/theme.js"></script>
     <script src="js/base-path.js"></script>
     <script src="js/logger.js"></script>
     <script src="js/config.js"></script>
     <script src="js/preproc.js"></script>
     <script src="js/script.js"></script>
     <script src="js/models.js"></script>
+    <script src="js/qwen.js"></script>
+    <script src="js/qwen-edit.js"></script>
+    <script src="js/wizard.js"></script>
 </body>
 </html>

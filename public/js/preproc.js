@@ -130,8 +130,87 @@ function renderPreprocGuide() {
     body.innerHTML = intro + cards + tip;
 }
 
+// ── Preprocesadores DEDICADOS (los 7 con parámetros propios) ──
+// Mirror del RICH_PREPROCS del server. Cada uno define sus controles.
+const PP_RICH = {
+    "CannyEdgePreprocessor": [
+        { k: "low_threshold", label: "Low threshold", t: "range", min: 0, max: 255, step: 1, def: 100 },
+        { k: "high_threshold", label: "High threshold", t: "range", min: 0, max: 255, step: 1, def: 200 },
+    ],
+    "LineartStandardPreprocessor": [
+        { k: "guassian_sigma", label: "Gaussian sigma", t: "range", min: 0, max: 30, step: 0.5, def: 6.0 },
+        { k: "intensity_threshold", label: "Intensity threshold", t: "range", min: 0, max: 16, step: 1, def: 8 },
+    ],
+    "DepthAnythingV2Preprocessor": [
+        { k: "ckpt_name", label: "Modelo (tamaño)", t: "select", def: "depth_anything_v2_vitl.pth",
+          opts: ["depth_anything_v2_vits.pth", "depth_anything_v2_vitb.pth", "depth_anything_v2_vitl.pth", "depth_anything_v2_vitg.pth"] },
+    ],
+    "MiDaS-NormalMapPreprocessor": [
+        { k: "a", label: "a (ángulo)", t: "range", min: 0, max: 15.7, step: 0.1, def: 6.28 },
+        { k: "bg_threshold", label: "BG threshold", t: "range", min: 0, max: 1, step: 0.05, def: 0.1 },
+    ],
+    "DWPreprocessor": [
+        { k: "detect_body", label: "Cuerpo", t: "toggle", def: "enable" },
+        { k: "detect_hand", label: "Manos", t: "toggle", def: "enable" },
+        { k: "detect_face", label: "Cara", t: "toggle", def: "enable" },
+    ],
+    "HEDPreprocessor": [
+        { k: "safe", label: "Safe (suaviza)", t: "toggle", def: "enable" },
+    ],
+    "TTPlanet_TileGF_Preprocessor": [
+        { k: "scale_factor", label: "Scale factor", t: "range", min: 1, max: 8, step: 0.5, def: 1.0 },
+        { k: "blur_strength", label: "Blur strength", t: "range", min: 1, max: 10, step: 0.5, def: 2.0 },
+        { k: "radius", label: "Radius", t: "range", min: 1, max: 20, step: 1, def: 7 },
+        { k: "eps", label: "Eps", t: "range", min: 0.001, max: 0.1, step: 0.001, def: 0.01 },
+    ],
+};
+
+// Dibuja en #ppParams los controles del preprocesador elegido (o un aviso si es genérico).
+function renderPpParams(name) {
+    const wrap = document.getElementById('ppParams');
+    if (!wrap) return;
+    const specs = PP_RICH[name];
+    if (!specs) {
+        wrap.innerHTML = '<small style="color:#94a3b8;">Preprocesador genérico (nodo AIO, sin parámetros propios). Para controles finos, elegí uno de los 7 dedicados (Canny, Lineart Standard, Depth Anything V2, MiDaS Normal, DWPose, HED, TTPlanet Tile).</small>';
+        return;
+    }
+    wrap.innerHTML = specs.map(s => {
+        const id = 'pp_' + s.k;
+        if (s.t === 'select') {
+            const opts = s.opts.map(o => `<option value="${o}"${o === s.def ? ' selected' : ''}>${o}</option>`).join('');
+            return `<div class="form-group"><label>${s.label}</label><select id="${id}" data-pp="${s.k}">${opts}</select></div>`;
+        }
+        if (s.t === 'toggle') {
+            return `<div class="form-group"><label>${s.label}</label><select id="${id}" data-pp="${s.k}"><option value="enable"${s.def === 'enable' ? ' selected' : ''}>Sí</option><option value="disable"${s.def === 'disable' ? ' selected' : ''}>No</option></select></div>`;
+        }
+        return `<div class="form-group"><label>${s.label}</label><div class="range-row"><input type="range" id="${id}" data-pp="${s.k}" min="${s.min}" max="${s.max}" step="${s.step}" value="${s.def}"><span class="range-value" id="${id}_val">${s.def}</span></div></div>`;
+    }).join('');
+    // live update de sliders + refrescar preview al cambiar
+    specs.forEach(s => {
+        const el = document.getElementById('pp_' + s.k);
+        if (!el) return;
+        const disp = document.getElementById('pp_' + s.k + '_val');
+        if (disp) el.addEventListener('input', () => { disp.textContent = el.value; });
+        el.addEventListener('change', () => { if (typeof autoPreviewPreprocess === 'function') autoPreviewPreprocess(); });
+    });
+}
+
+// Devuelve los params del preprocesador elegido como { pp_<k>: valor }
+function collectPpParams() {
+    const out = {};
+    document.querySelectorAll('#ppParams [data-pp]').forEach(el => {
+        out['pp_' + el.getAttribute('data-pp')] = el.value;
+    });
+    return out;
+}
+
 // Etiquetas de familia para la leyenda chica (badges variados) — usado por el modal
 document.addEventListener('DOMContentLoaded', () => {
     renderPreprocLegend();
     colorizeExistingPreprocOptions();
+    const sel = document.getElementById('preprocessor');
+    if (sel) {
+        renderPpParams(sel.value);
+        sel.addEventListener('change', () => renderPpParams(sel.value));
+    }
 });

@@ -171,25 +171,95 @@ ws.onmessage = (event) => {
         updateProgress('🎨 Descargando imagen...', 80);
         console.log('Imagen generada:', message.url);
 
-        const img = document.createElement('img');
-        img.src = message.url; img.alt = 'Generated Image';
-        img.onload = () => {
+        addToGallery(message.url, () => {
             updateProgress('✅ ¡Imagen completada!', 100);
             Logger.info('✅ Imagen cargada exitosamente');
-            imageContainer.innerHTML = '';
-            imageContainer.appendChild(img);
             document.getElementById('generateButton').disabled = false;
             document.getElementById('generateButton').textContent = '🚀 Generar Imagen';
             setTimeout(() => hideProgress(), 2000);
-        };
-        img.onerror = () => {
+        }, () => {
             Logger.error('❌ Error al cargar la imagen');
             hideProgress();
             document.getElementById('generateButton').disabled = false;
             document.getElementById('generateButton').textContent = '🚀 Generar Imagen';
-        };
+        });
     }
 };
+
+// ── Galería: acumula todas las imágenes generadas (no solo la última) ──
+const galleryUrls = new Set();
+
+function nameFromUrl(url) {
+    try { return decodeURIComponent(url.split('?')[0].split('/').pop()); } catch (e) { return 'imagen.png'; }
+}
+
+// Agrega una imagen a la galería y la pone como vista grande. onLoad/onError opcionales.
+function addToGallery(url, onLoad, onError) {
+    const cleanUrl = url.split('?')[0];
+    if (galleryUrls.has(cleanUrl)) { if (onLoad) onLoad(); return; }
+    galleryUrls.add(cleanUrl);
+
+    const gallery = document.getElementById('gallery');
+    const section = document.getElementById('gallerySection');
+    const bust = cleanUrl + '?t=' + Date.now();
+
+    // Vista grande = la más nueva
+    const big = document.createElement('img');
+    big.src = bust; big.alt = 'Imagen generada';
+    big.onload = () => { if (onLoad) onLoad(); };
+    big.onerror = () => { if (onError) onError(); };
+    imageContainer.innerHTML = '';
+    imageContainer.appendChild(big);
+
+    // Miniatura en la grilla
+    const cell = document.createElement('div');
+    cell.style.cssText = 'position:relative; border-radius:6px; overflow:hidden; cursor:pointer; aspect-ratio:1; background:#f0f0f0;';
+    const thumb = document.createElement('img');
+    thumb.src = bust; thumb.alt = nameFromUrl(cleanUrl);
+    thumb.style.cssText = 'width:100%; height:100%; object-fit:cover; display:block;';
+    thumb.title = 'Click para ver grande';
+    thumb.addEventListener('click', () => {
+        imageContainer.innerHTML = '';
+        const v = document.createElement('img');
+        v.src = bust; v.alt = 'Imagen generada';
+        imageContainer.appendChild(v);
+        imageContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    });
+    const dl = document.createElement('a');
+    dl.href = bust; dl.download = nameFromUrl(cleanUrl);
+    dl.textContent = '⬇️';
+    dl.title = 'Descargar esta imagen';
+    dl.style.cssText = 'position:absolute; bottom:4px; right:4px; background:rgba(0,0,0,.55); color:#fff; ' +
+                       'border-radius:4px; padding:1px 5px; font-size:13px; text-decoration:none;';
+    cell.appendChild(thumb);
+    cell.appendChild(dl);
+    gallery.appendChild(cell);
+
+    section.style.display = 'block';
+    const c = document.getElementById('galleryCount');
+    if (c) c.textContent = `(${galleryUrls.size})`;
+}
+
+// Botones de la galería + carga de imágenes ya generadas al abrir.
+document.addEventListener('DOMContentLoaded', () => {
+    const dlAll = document.getElementById('downloadAllBtn');
+    if (dlAll) dlAll.addEventListener('click', () => {
+        if (!galleryUrls.size) { alert('Todavía no generaste ninguna imagen.'); return; }
+        window.location.href = apiUrl('/api/download-all');
+    });
+    const clr = document.getElementById('clearGalleryBtn');
+    if (clr) clr.addEventListener('click', () => {
+        galleryUrls.clear();
+        document.getElementById('gallery').innerHTML = '';
+        document.getElementById('galleryCount').textContent = '';
+        document.getElementById('gallerySection').style.display = 'none';
+        Logger.info('🗑️ Galería limpiada (los archivos siguen en el server)');
+    });
+    // Reconstruir la galería con lo que ya hay generado (sobrevive recargas).
+    fetch(apiUrl('/api/images')).then(r => r.json()).then(d => {
+        if (d.success && Array.isArray(d.images)) d.images.forEach(it => addToGallery(it.url));
+    }).catch(() => {});
+});
 
 // ── Progress bar ──
 function showProgress(text, percent) {
@@ -216,19 +286,41 @@ function getVal(id, fallback) {
     return v;
 }
 
+// ── Validación / saneado de inputs numéricos ──
+function clampInt(v, min, max) {
+    let n = Math.round(Number(v));
+    if (!Number.isFinite(n)) n = min;
+    return Math.max(min, Math.min(max, n));
+}
+function clampNum(v, min, max) {
+    let n = Number(v);
+    if (!Number.isFinite(n)) n = min;
+    return Math.max(min, Math.min(max, n));
+}
+// Redondea al múltiplo más cercano dentro del rango (latente SD3/Z-Image = múltiplos de 16).
+function clampMult(v, min, max, mult) {
+    const n = clampInt(v, min, max);
+    return Math.max(min, Math.min(max, Math.round(n / mult) * mult));
+}
+// Seed entero exacto (evita la basura por pérdida de precisión de floats > 2^53).
+function randomSeed() {
+    return Math.floor(Math.random() * 1e15) + 1;
+}
+
 function collectParams() {
     if (DIPLO_LIKE.includes(currentWorkflow)) {
         return {
             // KSampler
-            steps: getVal('diploSteps', 8),
-            cfg: getVal('diploCfg', 1.0),
-            denoise: getVal('diploDenoise', 0.55),
+            steps: clampInt(getVal('diploSteps', 8), 1, 150),
+            cfg: clampNum(getVal('diploCfg', 1.0), 1, 30),
+            denoise: clampNum(getVal('diploDenoise', 1.0), 0.05, 1),
             sampler_name: getVal('diploSampler', 'euler'),
             scheduler: getVal('diploScheduler', 'simple'),
             seed: getVal('seed', -1),
-            // Dims
-            width: getVal('diploWidth', 1024),
-            height: getVal('diploHeight', 640),
+            // Dims (redondeadas a múltiplo de 16; el latente lo exige)
+            width: clampMult(getVal('diploWidth', 1024), 256, 2048, 16),
+            height: clampMult(getVal('diploHeight', 640), 256, 2048, 16),
+            batch_size: clampInt(getVal('diploBatch', 1), 1, 8),
             // Prompt (negativo unificado: la caja de abajo, compartida por todos los modos)
             negative_prompt: getVal('negPrompt', 'blurry, ugly, low quality'),
             tile_prompt: getVal('tilePrompt', null),
@@ -237,12 +329,17 @@ function collectParams() {
             lora_name: getVal('loraName', ''),
             lora_strength_model: getVal('loraStrengthModel', 0.80),
             lora_strength_clip: getVal('loraStrengthClip', 1.00),
+            // img2img — usa la imagen subida como latente inicial (en vez de ControlNet).
+            // Gateado: solo true si el toggle está ON Y hay una imagen subida de verdad
+            // (#refImage con valor), para no mandar al Colab un archivo inexistente.
+            img2img: !!(document.getElementById('useImg2img') && document.getElementById('useImg2img').checked
+                        && document.getElementById('refImage') && document.getElementById('refImage').value),
             // ControlNet — ref_image = imagen subida (hidden refImage) o nombre manual (modo diplo)
             ref_image: getVal('refImage', '') || getVal('refImageName', 'DSC09211 (2).jpg'),
             preprocessor: getVal('preprocessor', 'CannyEdgePreprocessor'),
-            preprocessor_low: getVal('preprocessorLow', 100),
-            preprocessor_high: getVal('preprocessorHigh', 200),
             preprocessor_resolution: getVal('preprocessorRes', 512),
+            // params propios del preprocesador dedicado elegido (pp_*), si los hay
+            ...(typeof collectPpParams === 'function' ? collectPpParams() : {}),
             controlnet_strength: getVal('controlnetStrength', 0.90),
             scale_by: getVal('scaleBy', 0.19),
             scale_method: 'nearest-exact',
@@ -260,10 +357,10 @@ function collectParams() {
             upscale_resize_mode: getVal('upscaleResizeMode', 'crop'),
             upscale_resize_method: getVal('upscaleResizeMethod', 'nearest-exact'),
             // Advanced models
-            unet_name: getVal('unetName', 'z_image_turbo_fp8_e4m3fn.safetensors.safetensors'),
+            unet_name: getVal('unetName', 'z-image-turbo-fp8-e4m3fn.safetensors'),
             weight_dtype: getVal('weightDtype', 'fp8_e4m3fn'),
-            vae_name: getVal('vaeName', 'ultrafluxVAEImproved_v10.safetensors'),
-            clip_name: getVal('clipName', 'qwen_3_4b.safetensors.safetensors'),
+            vae_name: getVal('vaeName', 'ae.safetensors'),
+            clip_name: getVal('clipName', 'qwen_3_4b_fp8_mixed.safetensors'),
             upscale_model_name: getVal('upscaleModel', '2x-AnimeSharpV4_RCAN.safetensors'),
             model_patch_name: getVal('modelPatchName', 'Z-Image-Turbo-Fun-Controlnet-Union.safetensors')
         };
@@ -290,16 +387,22 @@ document.getElementById('generateButton').addEventListener('click', () => {
     
     const params = collectParams();
     if (params.seed === -1) {
-        params.seed = Math.floor(Math.random() * 18446744073709551614) + 1;
+        params.seed = randomSeed();
         document.getElementById('seed').value = params.seed;
     }
 
-    // En DIPLO Colab, si hay una imagen de referencia subida, ControlNet se activa solo.
+    // En DIPLO Colab, si hay una imagen subida: por defecto activa ControlNet.
+    // Pero si el toggle img2img está ON, la imagen entra como latente inicial y NO
+    // cambiamos de workflow (el server inserta LoadImage+VAEEncode en el mismo diplocolab).
     let effectiveWorkflow = currentWorkflow;
     const refImg = document.getElementById('refImage');
     if (currentWorkflow === 'diplocolab' && refImg && refImg.value) {
-        effectiveWorkflow = 'diplocolabcn';
-        Logger.info('🎯 ControlNet activo (imagen de referencia subida)');
+        if (params.img2img) {
+            Logger.info(`🖼️ img2img activo (imagen como base, denoise=${params.denoise})`);
+        } else {
+            effectiveWorkflow = 'diplocolabcn';
+            Logger.info('🎯 ControlNet activo (imagen de referencia subida)');
+        }
     }
 
     Logger.info(`📤 [${effectiveWorkflow}] Prompt: "${prompt.substring(0, 50)}${prompt.length > 50 ? '...' : ''}"`);
@@ -377,6 +480,32 @@ function clearRefImage() {
     Logger.info('🎯 ControlNet desactivado (imagen quitada)');
 }
 
+// ── Describir imagen → prompt (Qwen3-VL): describe la imagen subida y la pega en el prompt ──
+async function describeImage() {
+    const image = (document.getElementById('refImage') || {}).value;
+    if (!image) { alert('Subí una imagen de referencia primero (la describe el Qwen3-VL).'); return; }
+    const status = document.getElementById('preprocessStatus');
+    if (status) status.textContent = '🔎 Describiendo imagen con Qwen3-VL (puede tardar)...';
+    try {
+        const resp = await fetch(apiUrl('/api/describe-image'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ image })
+        });
+        const d = await resp.json();
+        if (d.success && d.prompt) {
+            const box = document.getElementById('prompt');
+            if (box) { box.value = d.prompt; box.focus(); }
+            if (status) status.textContent = '✅ Prompt generado y pegado. Editalo si querés.';
+            Logger.info(`🔎 Qwen3-VL → prompt (${d.prompt.length} chars)`);
+        } else {
+            if (status) status.textContent = '❌ ' + (d.error || 'no se pudo describir');
+        }
+    } catch (e) {
+        if (status) status.textContent = '❌ ' + e.message;
+    }
+}
+
 // ── Agregar un LoRA por URL: lo baja al Colab y refresca el desplegable ──
 async function addLoraByUrl() {
     const url = (document.getElementById('loraUrl').value || '').trim();
@@ -449,6 +578,20 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 });
 
+// Al togglear img2img, actualiza el texto del badge (sin romper el botón "Quitar imagen")
+// para que no diga "ControlNet" cuando la imagen se va a usar como base img2img.
+document.addEventListener('DOMContentLoaded', () => {
+    const chk = document.getElementById('useImg2img');
+    if (!chk) return;
+    chk.addEventListener('change', () => {
+        const badge = document.getElementById('cnBadge');
+        if (badge && badge.firstChild) {
+            const mode = chk.checked ? 'img2img (imagen como base)' : 'ControlNet activado';
+            badge.firstChild.nodeValue = `✅ ${mode} — se usará esta imagen `;
+        }
+    });
+});
+
 // Corre SOLO el preprocesador y muestra el resultado, para ver qué hace antes de generar.
 async function previewPreprocess() {
     const image = document.getElementById('refImage').value;
@@ -458,7 +601,9 @@ async function previewPreprocess() {
         image,
         preprocessor: getVal('preprocessor', 'CannyEdgePreprocessor'),
         resolution: getVal('preprocessorRes', 512),
-        scale_by: getVal('scaleBy', 1.0)
+        scale_by: getVal('scaleBy', 1.0),
+        // params propios del preprocesador dedicado (pp_*), para que la preview los use
+        ...(typeof collectPpParams === 'function' ? collectPpParams() : {})
     };
     if (status) status.textContent = '⏳ Preprocesando...';
     try {

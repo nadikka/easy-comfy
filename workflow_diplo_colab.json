@@ -1,7 +1,7 @@
 {
   "16": {
     "inputs": {
-      "unet_name": "z_image_turbo_fp8_e4m3fn.safetensors.safetensors",
+      "unet_name": "z-image-turbo-fp8-e4m3fn.safetensors",
       "weight_dtype": "fp8_e4m3fn"
     },
     "class_type": "UNETLoader",
@@ -9,7 +9,7 @@
   },
   "28": {
     "inputs": {
-      "clip_name": "qwen_3_4b.safetensors.safetensors",
+      "clip_name": "qwen_3_4b_fp8_mixed.safetensors",
       "type": "lumina2"
     },
     "class_type": "CLIPLoader",
@@ -17,7 +17,7 @@
   },
   "17": {
     "inputs": {
-      "vae_name": "ultrafluxVAEImproved_v10.safetensors"
+      "vae_name": "ae.safetensors"
     },
     "class_type": "VAELoader",
     "_meta": {"title": "VAE Loader (UltraFlux)"}

@@ -153,9 +153,10 @@ resetModels = function() {
 // Función para randomizar la semilla
 function randomizeSeed() {
     const seedInput = document.getElementById('seed');
-    const randomSeed = Math.floor(Math.random() * 18446744073709551614) + 1;
-    seedInput.value = randomSeed;
-    Logger.info(`🎲 Semilla aleatoria: ${randomSeed}`);
+    // Seed entero exacto (sin la basura por pérdida de precisión de floats > 2^53).
+    const s = Math.floor(Math.random() * 1e15) + 1;
+    seedInput.value = s;
+    Logger.info(`🎲 Semilla aleatoria: ${s}`);
 }
 
 // Variable global para saber si estamos conectados
