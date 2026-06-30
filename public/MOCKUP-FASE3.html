@@ -20,7 +20,7 @@
     --accent:#6d5ae0; --accent-hover:#5b49cc; --accent-soft:#ece9fb;
     --ok:#2e9e5b; --warn:#d98a00; --error:#d64545; --info:#2f7dd1;
     --radius-sm:6px; --radius:10px; --radius-lg:14px;
-    --fs-xs:12px; --fs-sm:13px; --fs-base:15px; --fs-lg:18px; --fs-xl:22px;
+    --fs-xs:12px; --fs-sm:14px; --fs-base:16px; --fs-lg:18px; --fs-xl:24px;
     --sp:16px;
   }
   :root[data-theme="dark"]{
@@ -37,10 +37,10 @@
   .muted{color:var(--text-muted);} .faint{color:var(--text-faint);}
 
   /* ── Topbar ── */
-  .topbar{height:48px;display:flex;align-items:center;gap:14px;padding:0 18px;
-          background:var(--surface);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:20;}
-  .topbar .logo{font-weight:600;font-size:var(--fs-lg);}
-  .topbar .logo small{font-weight:400;font-size:var(--fs-xs);color:var(--text-faint);margin-left:6px;}
+  .topbar{display:flex;flex-direction:column;gap:10px;padding:22px 26px 16px;
+          background:var(--surface);border-bottom:1px solid var(--border);}
+  .topbar .logo{font-weight:800;font-size:64px;line-height:.9;text-transform:lowercase;letter-spacing:-2.5px;color:var(--text);}
+  .topbar-controls{display:flex;align-items:center;gap:14px;}
   .spacer{flex:1;}
   .status{display:flex;align-items:center;gap:7px;font-size:var(--fs-sm);color:var(--text-muted);}
   .dot{width:9px;height:9px;border-radius:50%;background:var(--ok);box-shadow:0 0 8px var(--ok);}
@@ -59,13 +59,13 @@
   /* ── Layout 2 columnas ── */
   .shell{display:grid;grid-template-columns:430px 1fr;gap:18px;max-width:1280px;margin:18px auto;padding:0 18px;align-items:start;}
   @media(max-width:900px){.shell{grid-template-columns:1fr;}}
-  .col-canvas{position:sticky;top:66px;}
+  .col-canvas{position:sticky;top:18px;}
 
   /* ── Cards / acordeones ── */
   .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:14px;overflow:hidden;}
   .card>.head{display:flex;align-items:center;gap:9px;padding:13px 15px;cursor:pointer;user-select:none;}
   .card>.head .ico{width:7px;height:7px;border-radius:50%;background:var(--accent);flex-shrink:0;}
-  .card>.head .ttl{font-weight:500;font-size:var(--fs-base);}
+  .card>.head .ttl{font-weight:600;font-size:var(--fs-lg);}
   .card>.head .chev{margin-left:auto;color:var(--text-faint);transition:transform .2s;font-size:12px;}
   .card.open>.head .chev{transform:rotate(90deg);}
   .card>.body{display:none;padding:0 15px 15px;}
@@ -86,19 +86,29 @@
   .reco{display:none;font-size:var(--fs-xs);color:var(--accent);margin-top:4px;}
   body.learn .reco{display:block;}
 
-  .tip{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border-radius:50%;
-       border:1px solid var(--border-strong);color:var(--text-faint);font-size:9px;font-weight:700;cursor:help;margin-left:5px;vertical-align:middle;}
+  .tip{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;
+       border:1px solid var(--border-strong);color:var(--text-faint);font-size:10px;font-weight:700;cursor:help;margin-left:5px;vertical-align:middle;position:relative;}
   .tip:hover{color:var(--info);border-color:var(--info);}
+  /* Cajita de tooltip acorde a la interfaz (usa los mismos tokens), no el tooltip feo del navegador */
+  .tip:hover::after{content:attr(data-tip);position:absolute;bottom:135%;left:50%;transform:translateX(-50%);
+       background:var(--surface);color:var(--text);border:1px solid var(--border-strong);border-radius:var(--radius-sm);
+       padding:9px 12px;font-size:var(--fs-sm);font-weight:400;line-height:1.45;width:max-content;max-width:270px;
+       text-align:left;box-shadow:0 8px 24px rgba(0,0,0,.28);z-index:60;pointer-events:none;white-space:normal;}
+  .tip:hover::before{content:'';position:absolute;bottom:125%;left:50%;transform:translateX(-50%);
+       border:6px solid transparent;border-top-color:var(--border-strong);z-index:60;}
 
   .qbtn{font-size:var(--fs-xs);color:var(--info);background:none;border:none;cursor:pointer;padding:0;text-decoration:underline dotted;}
 
   /* ── Selector de intención (reemplaza el wizard) ── */
-  .intent{display:flex;gap:6px;background:var(--surface-sunken);border:1px solid var(--border);border-radius:var(--radius);padding:5px;}
-  .intent button{flex:1;background:none;border:none;border-radius:var(--radius-sm);padding:10px 8px;cursor:pointer;
-        color:var(--text-muted);font-size:var(--fs-sm);font-weight:500;display:flex;flex-direction:column;align-items:center;gap:3px;}
-  .intent button .em{font-size:18px;}
-  .intent button.active{background:var(--surface);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.12);}
-  .chip{display:inline-block;font-size:11px;font-weight:600;padding:1px 7px;border-radius:10px;}
+  .intent{display:flex;gap:8px;background:var(--surface-sunken);border:2px solid var(--accent);border-radius:var(--radius);
+        padding:7px;box-shadow:0 0 0 4px var(--accent-soft);}
+  .intent button{flex:1;background:none;border:none;border-radius:var(--radius-sm);padding:14px 8px;cursor:pointer;
+        color:var(--text-muted);font-size:var(--fs-base);font-weight:600;display:flex;flex-direction:column;align-items:center;gap:5px;transition:background .15s,color .15s;}
+  .intent button:hover{color:var(--text);background:var(--surface);}
+  .intent button .em{font-size:26px;}
+  .intent button.active{background:var(--accent);color:#fff;box-shadow:0 3px 12px color-mix(in srgb,var(--accent) 45%,transparent);}
+  .intent button.active .chip{background:rgba(255,255,255,.25);color:#fff;}
+  .chip{display:inline-block;font-size:12px;font-weight:600;padding:1px 7px;border-radius:10px;}
   .chip.warn{background:color-mix(in srgb,var(--warn) 20%,transparent);color:var(--warn);}
   .chip.ok{background:color-mix(in srgb,var(--ok) 20%,transparent);color:var(--ok);}
 
@@ -139,15 +149,17 @@
   .note{max-width:1280px;margin:14px auto 0;padding:0 18px;font-size:var(--fs-xs);color:var(--text-faint);}
 </style>
 </head>
-<body class="">
+<body class="learn">
 
 <div class="topbar">
-  <span class="logo">🎨 comfyweb <small>MOCKUP Fase 3 · modelo, no funcional</small></span>
-  <span class="spacer"></span>
-  <span class="status"><span class="dot" id="dot"></span><span id="statusTxt">Colab vivo · L4</span></span>
-  <label class="learn-switch" onclick="toggleLearn()"><span class="track"></span>🎓 Modo Aprender</label>
-  <button class="iconbtn" onclick="toggleTheme()" id="themeBtn" title="Cambiar tema">☀️</button>
-  <button class="iconbtn" title="Configuración del Colab (popover)">⚙</button>
+  <span class="logo">easy comfy</span>
+  <div class="topbar-controls">
+    <span class="status"><span class="dot" id="dot"></span><span id="statusTxt">Colab vivo · L4</span></span>
+    <span class="spacer"></span>
+    <label class="learn-switch" onclick="toggleLearn()"><span class="track"></span>🎓 Modo Aprender</label>
+    <button class="iconbtn" onclick="toggleTheme()" id="themeBtn" title="Cambiar tema">☀️</button>
+    <button class="iconbtn" title="Configuración del Colab (popover)">⚙</button>
+  </div>
 </div>
 
 <div class="note">Esto es un <b>modelo</b> para validar el diseño de la Fase 3. Probá: el switch <b>🎓 Modo Aprender</b>, el selector <b>¿Qué querés hacer?</b>, los acordeones, y el <b>tema</b> (arriba a la derecha).</div>
@@ -186,7 +198,9 @@
       <div class="head"><span class="ico"></span><span class="ttl">📝 Prompt</span></div>
       <div class="body">
         <p class="desc">Describí la imagen que querés. Más detalle = más control; si te pasás de largo el modelo diluye lo importante.</p>
-        <div class="field"><textarea placeholder="un zorro lowpoly al atardecer, geométrico, luz suave..."></textarea></div>
+        <div class="field"><textarea placeholder="lowpoly fox at sunset, geometric, soft light..."></textarea>
+          <p class="reco always" style="display:block;color:var(--text-muted)">🌐 <b>Escribí el prompt en inglés.</b> Estos modelos se entrenaron con descripciones en inglés y rinden bastante mejor así. (¿No sabés cómo? Usá "Describir imagen → prompt", te lo arma.)</p>
+        </div>
         <div class="card" style="margin:0">
           <div class="head" style="padding:9px 0" onclick="toggleCard(this)"><span class="ttl faint" style="font-size:var(--fs-sm)">▸ prompt negativo</span><span class="chev" style="margin-left:8px">▶</span></div>
           <div class="body" style="padding:0 0 6px"><textarea style="min-height:60px" placeholder="blurry, deformed hands, text, watermark...">blurry, ugly, low quality, deformed hands, extra limbs, text, watermark</textarea>
@@ -200,7 +214,7 @@
       <div class="head"><span class="ico"></span><span class="ttl">📐 Tamaño</span></div>
       <div class="body">
         <div class="row">
-          <div><label class="lbl">Ancho <span class="tip" title="Píxeles de ancho. Más grande = más detalle pero más lento y más VRAM.">i</span></label><input type="number" value="1024"></div>
+          <div><label class="lbl">Ancho <span class="tip" data-tip="Píxeles de ancho. Más grande = más detalle pero más lento y más VRAM.">i</span></label><input type="number" value="1024"></div>
           <div><label class="lbl">Alto</label><input type="number" value="640"></div>
           <button class="iconbtn" title="Semilla aleatoria" style="height:38px">🎲</button>
         </div>
@@ -218,7 +232,7 @@
           <select><option>Pose (DWPose)</option><option>Bordes (Canny)</option><option>Profundidad (Depth)</option><option>Líneas (LineArt)</option></select>
           <p class="reco">DWPose = replicar la pose de una persona. Canny = copiar contornos.</p>
         </div>
-        <div class="field"><label class="lbl">Fuerza <span class="tip" title="Cuánto manda tu referencia. 0 ignora, 1 al pie. No cambia la vista previa.">i</span></label><input type="number" value="0.90" step="0.05">
+        <div class="field"><label class="lbl">Fuerza <span class="tip" data-tip="Cuánto manda tu referencia. 0 ignora, 1 al pie. No cambia la vista previa.">i</span></label><input type="number" value="0.90" step="0.05">
           <p class="reco">Recomendado: 0.7–0.9.</p></div>
       </div>
     </div>
@@ -229,7 +243,8 @@
       <div class="body">
         <p class="desc always">Subís una imagen y escribís qué cambiar ("ponele pelo azul"); cambia eso y mantiene el resto. Para los <b>estados de Elena</b>: una serie coherente del mismo personaje sin perder identidad.</p>
         <div class="field"><label class="lbl">Imagen a editar</label><input type="text" value="(elegí un archivo…)" readonly></div>
-        <div class="field"><label class="lbl">Instrucción</label><input type="text" placeholder="ponele pelo azul / cambiá el fondo a un bosque"></div>
+        <div class="field"><label class="lbl">Instrucción</label><input type="text" placeholder="make her hair blue / change the background to a forest">
+          <p class="reco always" style="display:block;color:var(--text-muted)">🌐 <b>Mejor en inglés.</b> Qwen entiende varios idiomas, pero en inglés acierta más fino.</p></div>
         <label class="lbl"><input type="checkbox" checked style="width:auto"> Modo rápido (4 pasos)</label>
         <p class="reco" style="margin-top:6px">Destildá para más calidad (20 pasos, más lento). 1ª corrida ~10 min.</p>
       </div>
@@ -238,10 +253,16 @@
     <!-- Acordeones secundarios (siempre disponibles) -->
     <div class="card" id="card-lora"><div class="head" onclick="toggleCard(this)"><span class="ico"></span><span class="ttl">✨ Estilo / Personaje (LoRA)</span><span class="chev">▶</span></div>
       <div class="body">
-        <p class="desc always">Que aparezca SIEMPRE el mismo personaje o estilo entrenado aparte (Elena). Podés bajar uno nuevo de Civitai con el link.</p>
+        <p class="desc always">Un <b>LoRA</b> es un mini-modelo que le enseña a la IA <b>una cosa específica</b>: una cara (Elena), un estilo de dibujo, una paleta. Lo aplicás sobre el modelo base y a partir de ahí tus imágenes salen SIEMPRE con ese personaje o look. Sin LoRA = caras/estilos genéricos; con LoRA = tu personaje recurrente.</p>
         <label class="lbl"><input type="checkbox" style="width:auto"> Usar LoRA</label>
-        <div class="field" style="margin-top:10px"><select><option>elena_v3.safetensors</option><option>bradhamel_style.safetensors</option></select></div>
-        <div class="field"><label class="lbl">Fuerza <span class="tip" title=">1.2 = frituras. 0 = no se nota.">i</span></label><input type="number" value="0.80" step="0.05"><p class="reco">Zona 0.7–0.9. Un LoRA por vez.</p></div>
+        <div class="field" style="margin-top:10px"><label class="lbl">Elegí uno cargado</label><select><option>elena_v3.safetensors</option><option>bradhamel_style.safetensors</option></select></div>
+        <div class="field"><label class="lbl">Fuerza <span class="tip" data-tip="Cuánto pesa el estilo/personaje. >1.2 = 'frituras' (se rompe). 0 = no se nota. Zona buena 0.7–0.9.">i</span></label><input type="number" value="0.80" step="0.05"><p class="reco">Zona 0.7–0.9. Un LoRA por vez (por ahora).</p></div>
+        <!-- Cargar LoRA por URL: la capacidad YA existe en comfyweb (/api/add-lora + leo_lora_fetch) -->
+        <div class="field" style="background:var(--surface-sunken);border-radius:var(--radius-sm);padding:11px;border:1px dashed var(--border-strong)">
+          <label class="lbl">➕ ¿No está en la lista? Bajalo de Civitai <span class="tip" data-tip="comfyweb baja el .safetensors al Colab (models/loras) y lo refresca sin reiniciar. Tiene que ser un LoRA compatible con Z-Image.">i</span></label>
+          <div style="display:flex;gap:8px"><input type="text" placeholder="https://civitai.com/.../archivo.safetensors" style="flex:1"><button class="iconbtn" style="white-space:nowrap">⬇ Bajar al Colab</button></div>
+          <p class="reco" style="display:block;color:var(--text-faint)">Pegás el link, "Bajar", y aparece en el dropdown de arriba. (Esto YA funciona en comfyweb.)</p>
+        </div>
         <div class="demo">💡 <b>Probá esto:</b> con fuerza 1.5 el personaje se "fríe". <a href="#" onclick="return false">Ver qué pasa →</a></div>
       </div>
     </div>
@@ -255,9 +276,9 @@
       <div class="body">
         <p class="desc always">El motor fino del muestreo. Con los defaults ya sale bien; tocá si querés experimentar.</p>
         <div class="row" style="grid-template-columns:1fr 1fr 1fr">
-          <div><label class="lbl">Steps</label><input type="number" value="8"><p class="reco">8 va fino. +12 casi no cambia.</p></div>
-          <div><label class="lbl">CFG</label><input type="number" value="1.0" step="0.5"><p class="reco">⚠️ Turbo quiere 1. +1 quema.</p></div>
-          <div><label class="lbl">Denoise</label><input type="number" value="1.0" step="0.05"><p class="reco">txt2img: dejá 1.</p></div>
+          <div><label class="lbl">Steps <span class="tip" data-tip="Cuántas pasadas dibuja la IA. Subir = un poco más de detalle pero más lento (arriba de ~12 casi no cambia). Bajar mucho = imagen a medio terminar.">i</span></label><input type="number" value="8"><p class="reco">8 va fino. +12 casi no cambia.</p></div>
+          <div><label class="lbl">CFG <span class="tip" data-tip="Cuánto le hace caso al prompt. Con Z-Image Turbo, pasar de 1 quema y distorsiona: este modelo quiere CFG 1.">i</span></label><input type="number" value="1.0" step="0.5"><p class="reco">⚠️ Turbo quiere 1. +1 quema.</p></div>
+          <div><label class="lbl">Denoise <span class="tip" data-tip="Cuánto borra de la imagen de partida antes de redibujar. En txt2img dejalo en 1. Solo importa en img2img: 0.3 mantiene casi todo, 0.6 cambia bastante.">i</span></label><input type="number" value="1.0" step="0.05"><p class="reco">txt2img: dejá 1.</p></div>
         </div>
         <div class="demo">💡 <b>Probá esto:</b> poné CFG en 8 y mirá cómo se quema la imagen. <a href="#" onclick="return false">Ver qué pasa →</a></div>
       </div>
@@ -283,7 +304,7 @@
 
 <!-- Consola colapsada al pie -->
 <div class="console">
-  <div class="card"><div class="head" onclick="toggleCard(this)"><span class="ico"></span><span class="ttl faint">▸ Consola Node.js</span><span class="chev">▶</span></div>
+  <div class="card"><div class="head" onclick="toggleCard(this)"><span class="ico"></span><span class="ttl faint" style="font-size:var(--fs-sm)">▸ Consola Node.js</span><span class="chev">▶</span></div>
     <div class="body">[10:16] ✓ WebSocket conectado con ComfyUI
 [10:16] Colab vivo · NVIDIA L4 (23.7 GB)
 [10:17] (esperando acción del usuario…)</div></div>
