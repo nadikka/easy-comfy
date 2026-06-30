@@ -1,96 +1,20 @@
 /* ============================================================
-   app.css — Tema claro/oscuro para comfyweb (Fase 2 del dossier)
-   Estrategia: los estilos base viven inline en index.html (modo claro).
-   Acá definimos tokens y un bloque [data-theme="dark"] que pisa las
-   superficies clave. Se carga DESPUÉS del <style> inline → gana por
-   orden + especificidad (atributo + clase). No reescribe el layout.
+   app.css — Fase 3: el tema (tokens dark/light) vive ahora INLINE en
+   index.html (:root + :root[data-theme="dark"]), token-based según el
+   dossier §7.3. Acá queda solo la transición suave al cambiar de tema
+   (no en el primer pintado). El viejo bloque [data-theme="dark"] por
+   clase (.container/.generation-section/…) se eliminó: esas clases ya
+   no existen tras el rediseño y pisaban los tokens.
    ============================================================ */
 
-:root {
-  --border: #ddd;
-}
-
-/* Transición suave al cambiar de tema (no en el primer pintado) */
-[data-theme] body, [data-theme] .container, [data-theme] .param-section,
-[data-theme] .config-section, [data-theme] .generation-section,
-[data-theme] input, [data-theme] textarea, [data-theme] select {
+[data-theme] body,
+[data-theme] .topbar,
+[data-theme] .config-panel,
+[data-theme] .param-section,
+[data-theme] .welcome,
+[data-theme] .card,
+[data-theme] input,
+[data-theme] textarea,
+[data-theme] select {
   transition: background-color .2s ease, color .2s ease, border-color .2s ease;
 }
-
-/* ───────────────────────── MODO OSCURO ───────────────────────── */
-[data-theme="dark"] {
-  --border: #3a3f4b;
-}
-
-/* Fondo general: cambio el gradiente claro por un fondo oscuro sobrio */
-[data-theme="dark"] body {
-  background: #14161c;
-}
-
-/* Superficies */
-[data-theme="dark"] .container { background: #1c1f27; box-shadow: 0 10px 40px rgba(0,0,0,0.5); }
-[data-theme="dark"] .config-section { background: #232733; }
-[data-theme="dark"] .generation-section { background: #1c1f27; border-color: #2c313d; }
-[data-theme="dark"] .param-section { background: #232733; border-color: #2c313d; }
-[data-theme="dark"] .progress-section { background: #232733; }
-[data-theme="dark"] .progress-bar-container { background: #14161c; }
-
-/* El header mantiene su gradiente (queda bien en ambos temas) */
-
-/* Texto */
-[data-theme="dark"] .config-section h3,
-[data-theme="dark"] .generation-section h3,
-[data-theme="dark"] .param-section h4,
-[data-theme="dark"] .progress-text { color: #e6e8ee; }
-[data-theme="dark"] .form-group label { color: #c2c7d2; }
-[data-theme="dark"] small,
-[data-theme="dark"] .progress-percent { color: #9aa0ad; }
-
-/* Inputs / selects / textareas */
-[data-theme="dark"] input[type="number"],
-[data-theme="dark"] input[type="text"],
-[data-theme="dark"] select,
-[data-theme="dark"] textarea,
-[data-theme="dark"] .config-input {
-  background: #14161c;
-  color: #e6e8ee;
-  border-color: #3a3f4b;
-}
-[data-theme="dark"] input::placeholder,
-[data-theme="dark"] textarea::placeholder { color: #6b7280; }
-
-/* Descripción de cada sección (la capa "explicativa" actual) */
-[data-theme="dark"] .section-desc {
-  background: #1a1d24;
-  color: #aab0bd;
-  border-left-color: #7c8cff;
-}
-
-/* Wizard / Asistente */
-[data-theme="dark"] .wizard {
-  background: linear-gradient(135deg, #20232e 0%, #262130 100%);
-  border-color: #343a4d;
-}
-[data-theme="dark"] .wizard h3 { color: #c9cdf0; }
-[data-theme="dark"] .wizard .wiz-sub { color: #9aa0ad; }
-[data-theme="dark"] .wiz-q { background: #1c1f27; border-color: #343a4d; }
-[data-theme="dark"] .wiz-q:hover { border-color: #5560a8; }
-[data-theme="dark"] .wiz-q .wq-txt { color: #e6e8ee; }
-[data-theme="dark"] .wiz-q .wq-desc { color: #9aa0ad; }
-[data-theme="dark"] .wiz-weight { color: #c2c7d2; }
-[data-theme="dark"] .wiz-weight .bar { background: #343a4d; }
-
-/* Selector de workflow */
-[data-theme="dark"] .workflow-btn { background: #232733; color: #c2c7d2; border-color: #343a4d; }
-[data-theme="dark"] .workflow-btn:hover { background: #2b3040; }
-[data-theme="dark"] .workflow-btn.active { background: #667eea; color: #fff; border-color: #667eea; }
-
-/* Botones de config (la barra de URL) quedan bien; solo el borde del input */
-[data-theme="dark"] .advanced-params { border-top-color: #343a4d; }
-
-/* Galería: el contenedor de miniatura */
-[data-theme="dark"] #imageContainer img { box-shadow: 0 4px 20px rgba(0,0,0,0.4); }
-
-/* El toggle de tema en el header */
-#themeToggle { transition: background .2s, border-color .2s; }
-#themeToggle:hover { background: rgba(255,255,255,0.15); }
