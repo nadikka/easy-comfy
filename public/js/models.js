@@ -69,6 +69,7 @@ async function loadDiploModels(forceReload = false) {
         { id: 'clipName',       key: 'clip_name' },
         { id: 'loraName',       key: 'lora_name' },
         { id: 'upscaleModel',   key: 'upscale_model_name' },
+        { id: 'restoreUpscaleModel', key: 'upscale_model_name' },
         { id: 'modelPatchName', key: 'model_patch_name' },
         // sampler/scheduler del KSampler core — se llenan con lo que reporta el backend
         { id: 'diploSampler',   key: 'sampler_name' },

@@ -69,10 +69,13 @@ async function describeQwen() {
         }
         if (btn) btn.textContent = '⏳ Describiendo...';
         if (status) status.textContent = '🔎 Describiendo con Qwen3-VL (la 1ª vez tarda ~1-1½ min)...';
+        // system_prompt: el "rol" elegido (o el default del server si está vacío).
+        const sysEl = document.getElementById('qwenSystemPrompt');
+        const system_prompt = (sysEl && sysEl.value.trim()) ? sysEl.value.trim() : undefined;
         const resp = await fetch(apiUrl('/api/describe-image'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ image })
+            body: JSON.stringify({ image, system_prompt })
         });
         const d = await resp.json();
         if (d.success && d.prompt) {
@@ -104,3 +107,26 @@ function useQwenPrompt() {
         if (status) status.textContent = '✅ Pegado en el prompt. Editá y generá.';
     }
 }
+
+// ── Roles / system prompt (Clase 4: el system prompt le da enfoque al modelo de visión) ──
+// El endpoint /api/describe-image ya acepta system_prompt; acá ofrecemos presets editables.
+const QWEN_ROLES = [
+    { label: 'Asistente preciso (default)', sys: 'You are a precise vision assistant. Describe the image as a detailed, comma-separated text-to-image prompt. Be specific about subject, style, colors, lighting and composition.' },
+    { label: 'Fotógrafo documental (70s)', sys: 'You are a 1970s documentary photographer. Describe the image as a text-to-image prompt emphasizing black-and-white reportage, natural light, film grain, candid framing and a humanist gaze.' },
+    { label: 'Artista de collage / pintura', sys: 'You are an expert in collage and mixed-media painting. Describe the image as a prompt emphasizing texture, layering, materials, brushwork and painterly qualities rather than photographic realism.' },
+    { label: 'Crítico de arte', sys: 'You are an art critic. Describe the image as a prompt emphasizing art movement, style references, mood, symbolism and composition.' },
+    { label: 'Pixel art / videojuego', sys: 'You are a pixel-art game artist. Describe the image as a prompt for low-resolution pixel art: limited palette, strong silhouette, readable shapes and 16-bit aesthetics.' },
+    { label: '✏️ Personalizado (escribilo vos)', sys: '' },
+];
+
+document.addEventListener('DOMContentLoaded', () => {
+    const sel = document.getElementById('qwenRole');
+    const ta = document.getElementById('qwenSystemPrompt');
+    if (!sel || !ta) return;
+    sel.innerHTML = QWEN_ROLES.map((r, i) => `<option value="${i}">${r.label}</option>`).join('');
+    ta.value = QWEN_ROLES[0].sys;             // arranca con el default
+    sel.addEventListener('change', () => {
+        const r = QWEN_ROLES[sel.value];
+        if (r) ta.value = r.sys;              // al elegir un preset, escribe su system prompt (editable)
+    });
+});

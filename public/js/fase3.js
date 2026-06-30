@@ -28,12 +28,13 @@
 
     // ── Selector de intención ─────────────────────────────────────────────────
     const INTENT_DESC = {
-        generar: 'Generás una imagen desde cero, escribiendo una descripción.',
-        guiar:   'Subís una imagen y la nueva respeta su estructura (pose, bordes, profundidad).',
-        editar:  'Subís una imagen y le cambiás algo puntual con una instrucción. Necesita L4.'
+        generar:   'Generás una imagen desde cero, escribiendo una descripción.',
+        guiar:     'Subís una imagen y la nueva respeta su estructura (pose, bordes, profundidad).',
+        editar:    'Subís una imagen y le cambiás algo puntual con una instrucción. Necesita L4.',
+        restaurar: 'Subís una foto y la agrandás reconstruyendo detalle real (img2img + upscale).'
     };
     window.setIntent = function (k) {
-        document.body.classList.remove('intent-generar', 'intent-guiar', 'intent-editar');
+        document.body.classList.remove('intent-generar', 'intent-guiar', 'intent-editar', 'intent-restaurar');
         document.body.classList.add('intent-' + k);
         document.querySelectorAll('#intentSel button').forEach(function (b) {
             b.classList.toggle('active', b.dataset.intent === k);

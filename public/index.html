@@ -171,6 +171,15 @@
         .prompt-note{ display:none; font-size:var(--fs-xs); color:var(--text-muted); margin-top:8px; line-height:1.45; }
         body.learn .prompt-note{ display:block; }
 
+        /* Constructor de prompt (Master Prompt Builder) */
+        .pb-toggles{ display:grid; grid-template-columns:1fr 1fr; gap:6px 14px; margin:2px 0; }
+        .pb-toggles label{ display:flex; align-items:center; gap:7px; font-size:var(--fs-sm); color:var(--text-muted); cursor:pointer; }
+        .pb-toggles input{ width:auto; }
+        .pb-preview{ background:var(--surface-sunken); border:1px solid var(--border); border-radius:var(--radius-sm);
+            padding:9px 11px; font-size:var(--fs-sm); color:var(--text); line-height:1.45; min-height:38px;
+            font-family:'Courier New',monospace; }
+        .pb-preview.empty{ color:var(--text-faint); font-family:inherit; }
+
         /* ════════════════ Secciones de parámetros (cards / acordeones) ════════════════ */
         #diploParams{ display:none; }
         #diploParams.visible{ display:block; }
@@ -203,10 +212,12 @@
         .param-section.collapsed > *:not(h4){ display:none !important; }
 
         /* Visibilidad por intención (selector de intención, fase3.js pone la clase en body) */
-        .flow-guiar, .flow-editar{ display:none; }
+        .flow-guiar, .flow-editar, .flow-restaurar{ display:none; }
         body.intent-guiar  .flow-guiar{ display:block; }
         body.intent-editar .flow-editar{ display:block; }
-        body.intent-editar .gen-flow{ display:none !important; }
+        body.intent-restaurar .flow-restaurar{ display:block; }
+        body.intent-editar .gen-flow,
+        body.intent-restaurar .gen-flow{ display:none !important; }
 
         /* Descripción de cada sección (capa explicativa — Modo Aprender) */
         .section-desc{
@@ -457,6 +468,7 @@
                         <button class="active" data-intent="generar" onclick="setIntent('generar')"><span class="em">🎨</span>Generar</button>
                         <button data-intent="guiar" onclick="setIntent('guiar')"><span class="em">🎯</span>Guiar con imagen</button>
                         <button data-intent="editar" onclick="setIntent('editar')"><span class="em">✏️</span>Editar <span class="chip warn">L4</span></button>
+                        <button data-intent="restaurar" onclick="setIntent('restaurar')"><span class="em">🔧</span>Restaurar</button>
                     </div>
                     <p id="intentDesc">Generás una imagen desde cero, escribiendo una descripción.</p>
                 </div>
@@ -469,6 +481,39 @@
                     <div class="pb-neg">
                         <label for="negPrompt">🚫 Negative prompt — lo que NO querés <span class="info-tip" data-tip="Lo que querés evitar en la imagen: blur, deformaciones, marcas de agua, texto. Recomendado: blurry, low quality, deformed, text, watermark.">i</span></label>
                         <textarea id="negPrompt" placeholder="blurry, low quality, deformed, text, watermark...">blurry, ugly, low quality, deformed hands, extra limbs, text, watermark</textarea>
+                    </div>
+                </div>
+
+                <!-- 🎨 Constructor de prompt (Master Prompt Builder, Clase 4) — capa front -->
+                <div class="param-section gen-flow collapsible collapsed" id="sec-prompt-builder">
+                    <h4 onclick="toggleSection(this)"><span class="section-icon">🎨</span> Constructor de prompt (estilo + cámara)</h4>
+                    <p class="section-desc">La "máquina de prompts" de la Clase 4: elegí un <b>estilo</b>, una <b>cámara/óptica</b> y <b>detalles</b>, y se arma un sufijo <b>en inglés</b> que se agrega al final de tu prompt. El profe dice que una buena máquina de prompts rinde más que un LoRA. Es 100% navegador: no toca el Colab.</p>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Estilo <span class="info-tip" data-tip="Transfiere un estilo visual al prompt (Ghibli, óleo, cyberpunk, poster soviético...). Se agrega en inglés.">i</span></label>
+                            <select id="pbStyle"></select>
+                        </div>
+                        <div class="form-group">
+                            <label>Cámara / óptica <span class="info-tip" data-tip="Simula una cámara o look fotográfico (Leica, Hasselblad, golden hour, compresión cinemática...).">i</span></label>
+                            <select id="pbCamera"></select>
+                        </div>
+                    </div>
+                    <label class="lbl" style="display:block;font-size:var(--fs-sm);color:var(--text-muted);margin:2px 0 6px;font-weight:500;">Detalles</label>
+                    <div class="pb-toggles">
+                        <label><input type="checkbox" id="pbLight"> Iluminación cinematográfica</label>
+                        <label><input type="checkbox" id="pbDof"> Profundidad de campo (bokeh)</label>
+                        <label><input type="checkbox" id="pbDetail"> Alta calidad / detalle</label>
+                        <label><input type="checkbox" id="pbGrade"> Color grading</label>
+                        <label><input type="checkbox" id="pbComp"> Composición equilibrada</label>
+                        <label><input type="checkbox" id="pbMotion"> Motion blur</label>
+                        <label><input type="checkbox" id="pbFilm"> Grano de película</label>
+                        <label><input type="checkbox" id="pbNoWm"> Sin marca de agua ni texto</label>
+                    </div>
+                    <label class="lbl" style="display:block;font-size:var(--fs-sm);color:var(--text-muted);margin:10px 0 6px;font-weight:500;">Se agrega al prompt (en inglés):</label>
+                    <div class="pb-preview empty" id="pbPreview">(elegí estilo, cámara o detalles)</div>
+                    <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap;">
+                        <button type="button" class="config-button" onclick="pbApply()">➕ Agregar al prompt</button>
+                        <small id="pbStatus"></small>
                     </div>
                 </div>
 
@@ -533,6 +578,40 @@
                         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0;">
                             <img id="editThumb" style="display:none;height:54px;border-radius:6px;border:1px solid var(--border);">
                             <button type="button" class="config-button" id="editBtn" onclick="editImageQwen()">✏️ Editar imagen</button>
+                        </div>
+                    </div>
+
+                    <!-- 🔧 RESTAURAR / Tile — intención "Restaurar" -->
+                    <div class="param-section flow-restaurar" id="sec-restaurar" data-modes="diplocolab diplo">
+                        <h4><span class="section-icon">🔧</span> Restaurar / más detalle</h4>
+                        <p class="section-desc">Subí una foto (vieja, chica, con poco detalle) y la <b>agranda reconstruyendo detalle real</b> — no interpola píxeles como Topaz, repromptea con poco "ruido". Pensado para tu archivo de foto documental. El <b>Denoise</b> manda: 0.2 = fiel al original (restaurar/limpiar), alto = inventa. Usa el motor de imagen con la foto como base (img2img) + upscale.</p>
+                        <input type="hidden" id="restoreImage" value="">
+                        <div class="form-group">
+                            <label>📎 Imagen a restaurar <span class="info-tip" data-tip="Se sube al ComfyUI del Colab y se usa como base (img2img). El resultado entra a la galería.">i</span></label>
+                            <div class="file-upload-box">
+                                <input type="file" id="restoreFile" accept="image/*">
+                                <small id="restoreStatus" style="display:block;margin-top:6px;">Subí una imagen para restaurar.</small>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Fidelidad (Denoise) <span class="info-tip" data-tip="Cuánto se aleja del original. 0.2 = casi idéntico (restaurar/limpiar una foto), 0.4 = mejora con cambios, alto = reinventa. Para fotos reales: 0.15–0.3.">i</span></label>
+                            <div class="range-row">
+                                <input type="range" id="restoreDenoise" value="0.25" min="0.05" max="0.7" step="0.05">
+                                <span class="range-value" id="restoreDenoiseVal">0.25</span>
+                            </div>
+                            <p class="section-desc">Zona 0.15–0.3 para fotos reales. <b>0.2 fiel ↔ alto inventa.</b></p>
+                        </div>
+                        <div class="form-group">
+                            <label>Modelo de upscale <span class="info-tip" data-tip="El modelo que agranda. AnimeSharp = ilustración/limpio, 4x foto = realista, DJPG = saca artefactos de JPG. Se llena del backend al conectar.">i</span></label>
+                            <select id="restoreUpscaleModel"><option value="2x-AnimeSharpV4_RCAN.safetensors">2x-AnimeSharpV4_RCAN.safetensors</option></select>
+                        </div>
+                        <div class="form-group">
+                            <label>Guía opcional (prompt) <span class="info-tip" data-tip="Texto que orienta el detalle agregado, en inglés. Vacío = solo limpia/agranda. Ej: 'sharp detail, restored photo, fine grain'.">i</span></label>
+                            <input type="text" id="restorePrompt" placeholder="high quality, sharp detail, restored (opcional, en inglés)">
+                        </div>
+                        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0;">
+                            <img id="restoreThumb" style="display:none;height:54px;border-radius:6px;border:1px solid var(--border);">
+                            <button type="button" class="config-button" id="restoreBtn" onclick="restoreImage()">🔧 Restaurar imagen</button>
                         </div>
                     </div>
 
@@ -660,6 +739,11 @@
                                 <input type="file" id="qwenFile" accept="image/*">
                                 <small id="qwenStatus" style="display:block;margin-top:6px;">Subí una imagen para describir.</small>
                             </div>
+                        </div>
+                        <div class="form-group">
+                            <label>🎭 Rol del que describe <span class="info-tip" data-tip="El 'system prompt': le da una personalidad/enfoque al modelo de visión. Un fotógrafo documental describe distinto que un artista de collage. Elegí un preset o escribí el tuyo (en inglés).">i</span></label>
+                            <select id="qwenRole"></select>
+                            <textarea id="qwenSystemPrompt" style="min-height:54px;margin-top:6px;" placeholder="System prompt (en inglés)..."></textarea>
                         </div>
                         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0;">
                             <img id="qwenThumb" style="display:none;height:54px;border-radius:6px;border:1px solid var(--border);">
@@ -975,6 +1059,8 @@
     <script src="js/models.js"></script>
     <script src="js/qwen.js"></script>
     <script src="js/qwen-edit.js"></script>
+    <script src="js/prompt-builder.js"></script>
+    <script src="js/restore.js"></script>
     <script src="js/fase3.js"></script>
 </body>
 </html>
