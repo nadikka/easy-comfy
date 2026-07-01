@@ -14,6 +14,21 @@ comfyweb es solo la interfaz liviana que corre en tu máquina y le manda los ped
 
 ---
 
+## Son dos partes (y las dos son tuyas)
+
+1. **comfyweb** (este repo) — la UI, corre en tu PC.
+2. **El Colab** — la GPU. Vive en un repo aparte:
+   **https://github.com/nadikka/comfy-colab-leo** (notebook `ComfyUI_Web.ipynb`).
+
+El Colab lo abrís y corrés **en tu propia cuenta de Google** — usás *tu* GPU gratis, no la de
+nadie más. El notebook baja los modelos a *tu* Google Drive y te da una URL pública para
+conectar tu comfyweb. Todo bajo tu cuenta, sin depender de que otra persona esté online.
+
+> Podés abrir el notebook directo en Colab acá:
+> https://colab.research.google.com/github/nadikka/comfy-colab-leo/blob/master/ComfyUI_Web.ipynb
+
+---
+
 ## Qué necesitás (una sola vez)
 
 1. **Node.js** instalado (v18 o mayor) → https://nodejs.org (botón "LTS").
