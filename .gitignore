@@ -23,3 +23,6 @@ public/imagenes/**/*
 # OS specific files
 .DS_Store
 Thumbs.db
+
+# Config personal (cada usuario pega su propia URL de Colab en la UI)
+config.json

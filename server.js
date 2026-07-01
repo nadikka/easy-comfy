@@ -257,8 +257,9 @@ const app = express();
 const BASE_PATH = process.env.BASE_PATH || '';
 const PUBLIC_URL = process.env.PUBLIC_URL || '';
 // Base absoluta para las URLs de imagenes que se envian al cliente.
-// Default = VPS de produccion. En local: export IMAGE_BASE_URL="http://localhost:8085"
-const IMAGE_BASE_URL = process.env.IMAGE_BASE_URL || 'https://vps-4455523-x.dattaweb.com/comfyweb';
+// Orden: env explicita > PUBLIC_URL (lo setea el VPS via ecosystem) > localhost.
+// Asi corre en cualquier PC con solo "node server.js", sin setear nada.
+const IMAGE_BASE_URL = process.env.IMAGE_BASE_URL || process.env.PUBLIC_URL || 'http://localhost:8085';
 
 app.use(BASE_PATH, express.static(path.join(__dirname, 'public')));
 app.use(bodyParser.json({ limit: '30mb' })); // 30mb para subir imágenes de referencia en base64
