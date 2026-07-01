@@ -27,7 +27,7 @@ No necesitás instalar ComfyUI, ni modelos, ni Python en tu PC. Todo eso vive en
 
 ### Paso 1 — Prender la GPU en Colab
 
-1. Abrí el notebook: **https://colab.research.google.com/github/nadikka/comfy-colab-leo/blob/master/ComfyUI_Leo.ipynb**
+1. Abrí el notebook: **https://colab.research.google.com/github/nadikka/comfy-colab-leo/blob/master/ComfyUI_Web.ipynb**
 2. Arriba a la derecha, elegí una GPU: **Entorno de ejecución → Cambiar tipo de entorno → T4** (gratis).
 3. **Entorno de ejecución → Ejecutar todo.** La primera vez baja los modelos a *tu* Google Drive
    (~14 GB, tarda un rato); las siguientes veces arranca en 2-3 min.
