@@ -65,7 +65,9 @@ No necesitás instalar ComfyUI, ni modelos, ni Python en tu PC. Todo eso vive en
 ### Paso 1 — Prender la GPU en Colab
 
 1. Abrí el notebook: **https://colab.research.google.com/github/nadikka/comfy-colab-leo/blob/master/ComfyUI_Web.ipynb**
-2. Arriba a la derecha, elegí una GPU: **Entorno de ejecución → Cambiar tipo de entorno → T4** (gratis).
+2. Arriba a la derecha, elegí la GPU: **Entorno de ejecución → Cambiar tipo de entorno**.
+   **T4** (gratis) alcanza para Crear, ControlNet, LoRA, Describir y Restaurar. Solo el modo
+   **Editar** (Qwen-Image-Edit) necesita **L4** (en T4 se queda sin memoria / OOM).
 3. **Entorno de ejecución → Ejecutar todo.** La primera vez baja los modelos a *tu* Google Drive
    (~14 GB, tarda un rato); las siguientes veces arranca en 2-3 min.
 4. Cuando termine, abajo del todo imprime una **URL pública**, tipo:
@@ -155,7 +157,9 @@ You don't need to install ComfyUI, models, or Python on your PC. All of that liv
 ### Step 1 — Start the GPU on Colab
 
 1. Open the notebook: **https://colab.research.google.com/github/nadikka/comfy-colab-leo/blob/master/ComfyUI_Web.ipynb**
-2. Top right, pick a GPU: **Runtime → Change runtime type → T4** (free).
+2. Top right, pick the GPU: **Runtime → Change runtime type**.
+   **T4** (free) is enough for Create, ControlNet, LoRA, Describe and Restore. Only the
+   **Edit** mode (Qwen-Image-Edit) needs **L4** (on T4 it runs out of memory / OOM).
 3. **Runtime → Run all.** The first time it downloads the models to *your* Google Drive
    (~14 GB, takes a while); after that it starts in 2-3 min.
 4. When it finishes, at the very bottom it prints a **public URL**, like:
