@@ -14,6 +14,28 @@ comfyweb es solo la interfaz liviana que corre en tu máquina y le manda los ped
 
 ---
 
+## Cómo se ve · What it looks like
+
+Interfaz bilingüe (Español / English) — al abrir elegís idioma, y podés cambiarlo cuando quieras
+con el botón 🌐. *Bilingual UI — pick your language on start, switch anytime with the 🌐 button.*
+
+**Español**
+
+![easy comfy — portada](docs/screenshots/shot-es-1.png)
+![easy comfy — modos e imagen de partida](docs/screenshots/shot-es-2.png)
+![easy comfy — controles y galería](docs/screenshots/shot-es-3.png)
+
+**English**
+
+![easy comfy — home](docs/screenshots/shot-en-1.png)
+![easy comfy — modes and starting image](docs/screenshots/shot-en-2.png)
+![easy comfy — controls and gallery](docs/screenshots/shot-en-3.png)
+
+> La imagen del zorro es un ejemplo generado con este mismo pipeline (Z-Image Turbo).
+> *The fox image is a sample generated with this same pipeline (Z-Image Turbo).*
+
+---
+
 ## Son dos partes (y las dos son tuyas)
 
 1. **comfyweb** (este repo) — la UI, corre en tu PC.

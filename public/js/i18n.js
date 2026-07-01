@@ -521,7 +521,8 @@
     ["💡 <b>Tip:</b> ahora la <b>vista previa se actualiza sola</b> cuando cambiás de preprocesador (con una imagen subida). Así ves al toque qué extrae cada uno. El <b>ControlNet strength</b> NO cambia la vista previa — eso solo se nota en el resultado final.",
      "💡 <b>Tip:</b> the <b>preview now updates on its own</b> when you switch preprocessor (with an image uploaded). So you instantly see what each one extracts. <b>ControlNet strength</b> does NOT change the preview — that only shows in the final result."],
   ];
-  const stripNorm = (h) => (h || '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+  // Clave insensible a espacios (los <br>/negritas cambian el espaciado del textContent)
+  const stripNorm = (h) => (h || '').replace(/<[^>]+>/g, '').replace(/\s+/g, '');
   const richEs = {}, richEn = {};
   RICH.forEach(([es, en]) => { richEs[stripNorm(es)] = en; richEn[stripNorm(en)] = es; });
   const RICH_SEL = '.section-desc, .guide-pane p, .guide-pane .qa, .modal-body .intro, .pp-card p, .pp-card .pp-use';
@@ -529,7 +530,7 @@
   function translateRich(root, toEn) {
     const map = toEn ? richEs : richEn;
     const doOne = (el) => {
-      const k = (el.textContent || '').replace(/\s+/g, ' ').trim();
+      const k = (el.textContent || '').replace(/\s+/g, '');
       if (map[k] != null) el.innerHTML = map[k];
     };
     if (root.querySelectorAll) root.querySelectorAll(RICH_SEL).forEach(doOne);
