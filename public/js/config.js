@@ -25,7 +25,7 @@ async function saveConfig() {
     
     if (!comfyUrl) {
         Logger.error('URL vacía');
-        alert('Por favor ingrese una URL válida');
+        alert(window.i18nT ? window.i18nT('Por favor ingrese una URL válida') : 'Por favor ingrese una URL válida');
         return;
     }
     
@@ -35,7 +35,7 @@ async function saveConfig() {
         Logger.info(`Validando URL: ${comfyUrl}`);
     } catch (e) {
         Logger.error('URL inválida: ' + e.message);
-        alert('URL inválida. Debe incluir el protocolo (http:// o https://');
+        alert(window.i18nT ? window.i18nT('URL inválida. Debe incluir el protocolo (http:// o https://') : 'URL inválida. Debe incluir el protocolo (http:// o https://');
         return;
     }
     
@@ -70,12 +70,12 @@ async function saveConfig() {
             setTimeout(pingConnection, 1500);
         } else {
             Logger.error('Error al guardar: ' + (result.error || 'Unknown error'));
-            alert('Error al guardar configuración: ' + (result.error || 'Unknown error'));
+            alert((window.i18nT ? window.i18nT('Error al guardar configuración: ') : 'Error al guardar configuración: ') + (result.error || 'Unknown error'));
             updateStatusIndicator(false);
         }
     } catch (error) {
         Logger.error('Error de red: ' + error.message);
-        alert('Error al guardar configuración');
+        alert(window.i18nT ? window.i18nT('Error al guardar configuración') : 'Error al guardar configuración');
         updateStatusIndicator(false);
     }
 }
@@ -89,7 +89,7 @@ function setLocalhost() {
 // Deja la URL guardada actual y la selecciona para reemplazarla fácil pegando la nueva.
 function setColab() {
     const urlInput = document.getElementById('comfyUrl');
-    urlInput.placeholder = 'Pegá la URL *.trycloudflare.com del Colab';
+    urlInput.placeholder = window.i18nT ? window.i18nT('Pegá la URL *.trycloudflare.com del Colab') : 'Pegá la URL *.trycloudflare.com del Colab';
     urlInput.focus();
     urlInput.select(); // selecciona lo que haya para sobrescribir pegando
 }
