@@ -110,8 +110,11 @@
         /* ════════════════ Layout 2 columnas ════════════════ */
         .content{ max-width:1280px; margin:16px auto 0; padding:0 18px; }
         .shell{ display:grid; grid-template-columns:440px 1fr; gap:18px; align-items:start; }
-        @media(max-width:920px){ .shell{ grid-template-columns:1fr; } .col-canvas{ position:static !important; } }
-        .col-canvas{ position:sticky; top:16px; }
+        @media(max-width:920px){ .shell{ grid-template-columns:1fr; } .col-canvas{ position:static !important; max-height:none !important; overflow:visible !important; } }
+        /* Sticky con altura acotada + scroll propio: si la columna de controles es más corta,
+           sin esto la galería queda "colgando" fuera de la zona que el scroll de la página
+           alcanza a revelar (bug: solo scrollea la columna izquierda). */
+        .col-canvas{ position:sticky; top:16px; max-height:calc(100vh - 32px); overflow-y:auto; }
 
         /* ── Reordenamiento del panel "Crear" (flujo natural, SIN mover el DOM) ──
            col-controls es flex; #diploParams pasa a display:contents para que sus
@@ -131,7 +134,8 @@
         #sec-size{ order:19; }         /* Tamaño = último nodo (antes de seed/generar) */
         #sec-qwen-edit{ order:11; }    /* (solo modo Editar) */
         #sec-restaurar{ order:12; }    /* (solo modo Restaurar) */
-        #simpleParams{ order:13; }
+        #sec-video{ order:13; }        /* (solo modo Video, Seedance 2.0) */
+        #simpleParams{ order:14; }
         .seed-group{ order:20; }
         .primary{ order:21; }
 
@@ -187,8 +191,8 @@
             border:1px solid var(--border); border-radius:var(--radius-sm); font-size:var(--fs-sm);
             resize:vertical; font-family:inherit;
         }
-        .prompt-block #prompt{ min-height:104px; }
-        .prompt-block #negPrompt{ min-height:54px; }
+        .prompt-block #prompt{ min-height:160px; }
+        .prompt-block #negPrompt{ min-height:90px; }
         .prompt-block .pb-neg{ margin-top:12px; }
         .prompt-note{ display:none; font-size:var(--fs-xs); color:var(--text-muted); margin-top:8px; line-height:1.45; }
         body.learn .prompt-note{ display:block; }
@@ -235,12 +239,14 @@
         .param-section.collapsed > *:not(h4){ display:none !important; }
 
         /* Visibilidad por intención (selector de intención, fase3.js pone la clase en body) */
-        .flow-guiar, .flow-editar, .flow-restaurar{ display:none; }
+        .flow-guiar, .flow-editar, .flow-restaurar, .flow-video{ display:none; }
         body.intent-guiar  .flow-guiar{ display:block; }
         body.intent-editar .flow-editar{ display:block; }
         body.intent-restaurar .flow-restaurar{ display:block; }
+        body.intent-video .flow-video{ display:block; }
         body.intent-editar .gen-flow,
-        body.intent-restaurar .gen-flow{ display:none !important; }
+        body.intent-restaurar .gen-flow,
+        body.intent-video .gen-flow{ display:none !important; }
 
         /* Descripción de cada sección (capa explicativa — Modo Aprender) */
         .section-desc{
@@ -463,6 +469,14 @@
                 <button class="config-button" onclick="saveConfig()">Guardar y Conectar</button>
             </div>
             <small id="currentUrl"></small>
+
+            <h3 style="margin-top:16px;">🎬 API key de comfy.org (para Video / Seedance 2.0)</h3>
+            <p class="section-desc" style="display:block;">Necesaria solo para generar video. Se guarda en el server (nunca se loguea ni viaja en el grafo). Consume créditos de tu cuenta de comfy.org.</p>
+            <div class="config-row">
+                <input type="password" id="comfyOrgApiKey" class="config-input" placeholder="API key de comfy.org">
+                <button class="config-button" onclick="saveComfyOrgApiKey()">Guardar key</button>
+            </div>
+            <small id="comfyOrgApiKeyStatus"></small>
         </div>
     </div>
 
@@ -491,6 +505,7 @@
                         <button class="active" data-intent="generar" onclick="setIntent('generar')"><span class="em">🎨</span>Crear</button>
                         <button data-intent="editar" onclick="setIntent('editar')"><span class="em">✏️</span>Editar <span class="chip warn">L4</span></button>
                         <button data-intent="restaurar" onclick="setIntent('restaurar')"><span class="em">🔧</span>Restaurar</button>
+                        <button data-intent="video" onclick="setIntent('video')"><span class="em">🎬</span>Video</button>
                     </div>
                     <p id="intentDesc">Creás una imagen desde una descripción (y, si querés, partiendo de una imagen).</p>
                 </div>
@@ -637,6 +652,86 @@
                         </div>
                     </div>
 
+                    <!-- 🎬 VIDEO (Seedance 2.0) — intención "Video" -->
+                    <div class="param-section flow-video collapsible" id="sec-video" data-modes="diplocolab diplo">
+                        <h4 onclick="toggleSection(this)"><span class="section-icon">🎬</span> Video (Seedance 2.0) <span class="chip warn">$</span></h4>
+                        <p class="section-desc">Generá un video corto desde un prompt de texto, o partiendo de una imagen de referencia. Corre por los <b>API nodes oficiales de ComfyUI</b> (nodos Seedance 2.0) — el cómputo lo hace ByteDance en la nube, <b>no tu Colab</b>. <b>Genera vía API de ByteDance — consume créditos de comfy.org.</b> Necesitás cargar tu API key de comfy.org en ⚙️ Configuración.</p>
+
+                        <div class="form-group">
+                            <label>¿Desde texto o desde imagen? <span class="info-tip" data-tip="Texto a video: describís la escena y listo. Imagen a video: subís una foto/render y se anima a partir de ella (usa el nodo de referencia de Seedance 2.0).">i</span></label>
+                            <div style="display:flex;gap:14px;">
+                                <label style="display:flex;align-items:center;gap:6px;font-size:var(--fs-sm);cursor:pointer;"><input type="radio" name="videoMode" id="videoModeText" value="text" checked style="width:auto;"> Texto → Video</label>
+                                <label style="display:flex;align-items:center;gap:6px;font-size:var(--fs-sm);cursor:pointer;"><input type="radio" name="videoMode" id="videoModeImage" value="image" style="width:auto;"> Imagen → Video</label>
+                            </div>
+                        </div>
+
+                        <div class="form-group" id="videoImageGroup" style="display:none;">
+                            <input type="hidden" id="videoImage" value="">
+                            <label>📎 Imagen de referencia <span class="info-tip" data-tip="Se sube al ComfyUI del Colab y se usa como referencia para animar el video (nodo ByteDance2ReferenceNode).">i</span></label>
+                            <div class="file-upload-box">
+                                <input type="file" id="videoFile" accept="image/*">
+                                <small id="videoImageStatus" style="display:block;margin-top:6px;">Subí una imagen de referencia.</small>
+                            </div>
+                            <img id="videoThumb" style="display:none;height:54px;border-radius:6px;border:1px solid var(--border);margin-top:6px;">
+                        </div>
+
+                        <div class="form-group">
+                            <label>📝 Prompt del video <span class="info-tip" data-tip="Describí la escena/acción en inglés. Ej: 'a cat walking through a neon-lit alley at night, cinematic'.">i</span></label>
+                            <textarea id="videoPrompt" placeholder="a lowpoly fox running through a misty forest, cinematic camera pan..." style="min-height:70px;"></textarea>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Modelo <span class="info-tip" data-tip="Seedance 2.0 = máxima calidad. Seedance 2.0 Fast = más rápido/barato, sin 1080p.">i</span></label>
+                                <select id="videoModel" onchange="videoOnModelChange()">
+                                    <option value="Seedance 2.0">Seedance 2.0</option>
+                                    <option value="Seedance 2.0 Fast">Seedance 2.0 Fast</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Resolución <span class="info-tip" data-tip="480p más rápido/barato. 1080p solo disponible en Seedance 2.0 (no en Fast).">i</span></label>
+                                <select id="videoResolution">
+                                    <option value="480p">480p</option>
+                                    <option value="720p" selected>720p</option>
+                                    <option value="1080p">1080p</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Relación de aspecto <span class="info-tip" data-tip="Formato del video. 'adaptive' toma el aspecto de la imagen de referencia (solo tiene sentido en modo Imagen → Video).">i</span></label>
+                                <select id="videoRatio">
+                                    <option value="16:9" selected>16:9</option>
+                                    <option value="4:3">4:3</option>
+                                    <option value="1:1">1:1</option>
+                                    <option value="3:4">3:4</option>
+                                    <option value="9:16">9:16</option>
+                                    <option value="21:9">21:9</option>
+                                    <option value="adaptive">adaptive</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Duración (segundos) <span class="info-tip" data-tip="Entre 4 y 15 segundos. Más duración = más créditos consumidos.">i</span></label>
+                                <div class="range-row">
+                                    <input type="range" id="videoDuration" value="7" min="4" max="15" step="1">
+                                    <span class="range-value" id="videoDurationVal">7</span>
+                                </div>
+                            </div>
+                        </div>
+                        <label style="display:flex;align-items:center;gap:8px;margin:4px 0 10px;font-size:var(--fs-sm);cursor:pointer;">
+                            <input type="checkbox" id="videoAudio" checked style="width:auto;"> Generar audio junto con el video
+                        </label>
+
+                        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0;">
+                            <button type="button" class="config-button" id="videoBtn" onclick="generateVideo()">🎬 Generar video</button>
+                        </div>
+                        <small id="videoStatus" style="display:block;margin-top:6px;"></small>
+                        <div style="margin-top:10px;">
+                            <video id="videoResult" controls style="display:none;max-width:100%;border-radius:8px;border:1px solid var(--border);"></video>
+                            <a id="videoDownload" style="display:none;margin-top:6px;" class="config-button" download>⬇️ Descargar video</a>
+                        </div>
+                    </div>
+
                     <!-- 📷 IMAGEN DE PARTIDA (opcional) — antes "Guiar". Subís UNA imagen y elegís qué hacer con ella. -->
                     <div class="param-section gen-flow" id="sec-cn" data-modes="diplo diplocolab">
                         <h4><span class="section-icon">📷</span> ¿Partís de una imagen? <span style="font-size:12px;color:var(--text-faint);font-weight:400;">(opcional)</span></h4>
@@ -770,10 +865,11 @@
                                 <small id="qwenStatus" style="display:block;margin-top:6px;">Subí una imagen para describir.</small>
                             </div>
                         </div>
-                        <div class="form-group">
+                        <div class="form-group" style="background:var(--accent-soft);border:1px solid var(--accent);border-radius:var(--radius-sm);padding:10px 12px;">
                             <label>🎭 Rol del que describe <span class="info-tip" data-tip="El 'system prompt': le da una personalidad/enfoque al modelo de visión. Un fotógrafo documental describe distinto que un artista de collage. Elegí un preset o escribí el tuyo (en inglés).">i</span></label>
+                            <small style="display:block;margin:-2px 0 8px;color:var(--text-muted);">✏️ Personalizá cómo describe Qwen la imagen: elegí un rol de la lista o escribí tu propio system prompt.</small>
                             <select id="qwenRole"></select>
-                            <textarea id="qwenSystemPrompt" style="min-height:54px;margin-top:6px;" placeholder="System prompt (en inglés)..."></textarea>
+                            <textarea id="qwenSystemPrompt" style="min-height:70px;margin-top:6px;" placeholder="System prompt (en inglés)..."></textarea>
                         </div>
                         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0;">
                             <img id="qwenThumb" style="display:none;height:54px;border-radius:6px;border:1px solid var(--border);">
@@ -1091,6 +1187,7 @@
     <script src="js/qwen-edit.js"></script>
     <script src="js/prompt-builder.js"></script>
     <script src="js/restore.js"></script>
+    <script src="js/video.js"></script>
     <script src="js/fase3.js"></script>
     <script src="js/i18n.js"></script>
 </body>

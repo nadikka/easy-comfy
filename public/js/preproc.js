@@ -134,34 +134,49 @@ function renderPreprocGuide() {
 // Mirror del RICH_PREPROCS del server. Cada uno define sus controles.
 const PP_RICH = {
     "CannyEdgePreprocessor": [
-        { k: "low_threshold", label: "Low threshold", t: "range", min: 0, max: 255, step: 1, def: 100 },
-        { k: "high_threshold", label: "High threshold", t: "range", min: 0, max: 255, step: 1, def: 200 },
+        { k: "low_threshold", label: "Low threshold", t: "range", min: 0, max: 255, step: 1, def: 100,
+          tip: "Piso de detección de bordes. Bajarlo capta más líneas (más ruido); recomendado 100." },
+        { k: "high_threshold", label: "High threshold", t: "range", min: 0, max: 255, step: 1, def: 200,
+          tip: "Techo de detección de bordes. Subirlo deja solo los bordes más marcados; recomendado 200." },
     ],
     "LineartStandardPreprocessor": [
-        { k: "guassian_sigma", label: "Gaussian sigma", t: "range", min: 0, max: 30, step: 0.5, def: 6.0 },
-        { k: "intensity_threshold", label: "Intensity threshold", t: "range", min: 0, max: 16, step: 1, def: 8 },
+        { k: "guassian_sigma", label: "Gaussian sigma", t: "range", min: 0, max: 30, step: 0.5, def: 6.0,
+          tip: "Cuánto se difumina antes de extraer la línea. Más alto = trazo más limpio y menos detalle fino. Recomendado 6.0." },
+        { k: "intensity_threshold", label: "Intensity threshold", t: "range", min: 0, max: 16, step: 1, def: 8,
+          tip: "Sensibilidad para marcar una línea como tal. Más alto = menos líneas (solo las fuertes). Recomendado 8." },
     ],
     "DepthAnythingV2Preprocessor": [
         { k: "ckpt_name", label: "Modelo (tamaño)", t: "select", def: "depth_anything_v2_vitl.pth",
-          opts: ["depth_anything_v2_vits.pth", "depth_anything_v2_vitb.pth", "depth_anything_v2_vitl.pth", "depth_anything_v2_vitg.pth"] },
+          opts: ["depth_anything_v2_vits.pth", "depth_anything_v2_vitb.pth", "depth_anything_v2_vitl.pth", "depth_anything_v2_vitg.pth"],
+          tip: "Tamaño del modelo de profundidad: vits = rápido/menos preciso, vitl = buen balance (recomendado), vitg = más preciso y lento." },
     ],
     "MiDaS-NormalMapPreprocessor": [
-        { k: "a", label: "a (ángulo)", t: "range", min: 0, max: 15.7, step: 0.1, def: 6.28 },
-        { k: "bg_threshold", label: "BG threshold", t: "range", min: 0, max: 1, step: 0.05, def: 0.1 },
+        { k: "a", label: "a (ángulo)", t: "range", min: 0, max: 15.7, step: 0.1, def: 6.28,
+          tip: "Ángulo de sensibilidad del mapa de normales. 6.28 (≈2π) es el valor estándar; no suele hacer falta tocarlo." },
+        { k: "bg_threshold", label: "BG threshold", t: "range", min: 0, max: 1, step: 0.05, def: 0.1,
+          tip: "Umbral para separar fondo de figura. Más alto = más superficie tratada como fondo plano. Recomendado 0.1." },
     ],
     "DWPreprocessor": [
-        { k: "detect_body", label: "Cuerpo", t: "toggle", def: "enable" },
-        { k: "detect_hand", label: "Manos", t: "toggle", def: "enable" },
-        { k: "detect_face", label: "Cara", t: "toggle", def: "enable" },
+        { k: "detect_body", label: "Cuerpo", t: "toggle", def: "enable",
+          tip: "Detecta el esqueleto del cuerpo (hombros, brazos, piernas). Dejalo activado salvo que solo te interese cara/manos." },
+        { k: "detect_hand", label: "Manos", t: "toggle", def: "enable",
+          tip: "Detecta la pose de las manos. Apagalo si te da manos raras o no te importa esa zona." },
+        { k: "detect_face", label: "Cara", t: "toggle", def: "enable",
+          tip: "Detecta los puntos de la cara. Apagalo si solo te interesa la pose del cuerpo." },
     ],
     "HEDPreprocessor": [
-        { k: "safe", label: "Safe (suaviza)", t: "toggle", def: "enable" },
+        { k: "safe", label: "Safe (suaviza)", t: "toggle", def: "enable",
+          tip: "Modo 'safe': suaviza los bordes para una guía más laxa. Apagalo para bordes más crudos y detallados." },
     ],
     "TTPlanet_TileGF_Preprocessor": [
-        { k: "scale_factor", label: "Scale factor", t: "range", min: 1, max: 8, step: 0.5, def: 1.0 },
-        { k: "blur_strength", label: "Blur strength", t: "range", min: 1, max: 10, step: 0.5, def: 2.0 },
-        { k: "radius", label: "Radius", t: "range", min: 1, max: 20, step: 1, def: 7 },
-        { k: "eps", label: "Eps", t: "range", min: 0.001, max: 0.1, step: 0.001, def: 0.01 },
+        { k: "scale_factor", label: "Scale factor", t: "range", min: 1, max: 8, step: 0.5, def: 1.0,
+          tip: "Cuánto reduce la imagen antes de generar el tile-guide. 1.0 = sin reducir. Subir ayuda contra artefactos en imágenes grandes." },
+        { k: "blur_strength", label: "Blur strength", t: "range", min: 1, max: 10, step: 0.5, def: 2.0,
+          tip: "Suavizado aplicado al tile-guide. Más alto = guía más laxa (menos detalle exacto, más margen para reinventar)." },
+        { k: "radius", label: "Radius", t: "range", min: 1, max: 20, step: 1, def: 7,
+          tip: "Radio del filtro guiado. Más alto = suaviza un área mayor alrededor de cada píxel." },
+        { k: "eps", label: "Eps", t: "range", min: 0.001, max: 0.1, step: 0.001, def: 0.01,
+          tip: "Parámetro de regularización del filtro guiado. Valor técnico heredado del preprocesador; 0.01 anda bien, no suele hacer falta tocarlo." },
     ],
 };
 
@@ -176,14 +191,15 @@ function renderPpParams(name) {
     }
     wrap.innerHTML = specs.map(s => {
         const id = 'pp_' + s.k;
+        const tip = s.tip ? ` <span class="info-tip" data-tip="${s.tip.replace(/"/g, '&quot;')}">i</span>` : '';
         if (s.t === 'select') {
             const opts = s.opts.map(o => `<option value="${o}"${o === s.def ? ' selected' : ''}>${o}</option>`).join('');
-            return `<div class="form-group"><label>${s.label}</label><select id="${id}" data-pp="${s.k}">${opts}</select></div>`;
+            return `<div class="form-group"><label>${s.label}${tip}</label><select id="${id}" data-pp="${s.k}">${opts}</select></div>`;
         }
         if (s.t === 'toggle') {
-            return `<div class="form-group"><label>${s.label}</label><select id="${id}" data-pp="${s.k}"><option value="enable"${s.def === 'enable' ? ' selected' : ''}>Sí</option><option value="disable"${s.def === 'disable' ? ' selected' : ''}>No</option></select></div>`;
+            return `<div class="form-group"><label>${s.label}${tip}</label><select id="${id}" data-pp="${s.k}"><option value="enable"${s.def === 'enable' ? ' selected' : ''}>Sí</option><option value="disable"${s.def === 'disable' ? ' selected' : ''}>No</option></select></div>`;
         }
-        return `<div class="form-group"><label>${s.label}</label><div class="range-row"><input type="range" id="${id}" data-pp="${s.k}" min="${s.min}" max="${s.max}" step="${s.step}" value="${s.def}"><span class="range-value" id="${id}_val">${s.def}</span></div></div>`;
+        return `<div class="form-group"><label>${s.label}${tip}</label><div class="range-row"><input type="range" id="${id}" data-pp="${s.k}" min="${s.min}" max="${s.max}" step="${s.step}" value="${s.def}"><span class="range-value" id="${id}_val">${s.def}</span></div></div>`;
     }).join('');
     // live update de sliders + refrescar preview al cambiar
     specs.forEach(s => {
