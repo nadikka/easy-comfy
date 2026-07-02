@@ -30,10 +30,11 @@
     const INTENT_DESC = {
         generar:   'Creás una imagen desde una descripción (y, si querés, partiendo de una imagen).',
         editar:    'Subís una imagen y le cambiás algo puntual con una instrucción. Necesita L4.',
-        restaurar: 'Subís una foto y la agrandás reconstruyendo detalle real (img2img + upscale).'
+        restaurar: 'Subís una foto y la agrandás reconstruyendo detalle real (img2img + upscale).',
+        video:     'Generás un video corto desde texto o desde una imagen con Wan 2.2 (local en tu Colab, sin costo por clip).'
     };
     window.setIntent = function (k) {
-        document.body.classList.remove('intent-generar', 'intent-guiar', 'intent-editar', 'intent-restaurar');
+        document.body.classList.remove('intent-generar', 'intent-guiar', 'intent-editar', 'intent-restaurar', 'intent-video');
         document.body.classList.add('intent-' + k);
         document.querySelectorAll('#intentSel button').forEach(function (b) {
             b.classList.toggle('active', b.dataset.intent === k);
@@ -43,6 +44,7 @@
         // Abrir la sección de la intención elegida (si estaba colapsada)
         if (k === 'guiar')  { const cn = document.getElementById('sec-cn');        if (cn) cn.classList.remove('collapsed'); }
         if (k === 'editar') { const ed = document.getElementById('sec-qwen-edit'); if (ed) ed.classList.remove('collapsed'); }
+        if (k === 'video')  { const vd = document.getElementById('sec-video');     if (vd) vd.classList.remove('collapsed'); }
         try { localStorage.setItem('cw-intent', k); } catch (e) {}
     };
 

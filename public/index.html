@@ -107,21 +107,23 @@
         /* ════════════════ Banner accionable (lo inserta config.js en .content) ════════════════ */
         /* (estilos inline desde config.js; acá solo el margen contenedor lo da .content) */
 
-        /* ════════════════ Layout 2 columnas ════════════════ */
-        .content{ max-width:1280px; margin:16px auto 0; padding:0 18px; }
-        .shell{ display:grid; grid-template-columns:440px 1fr; gap:18px; align-items:start; }
-        @media(max-width:920px){ .shell{ grid-template-columns:1fr; } .col-canvas{ position:static !important; max-height:none !important; overflow:visible !important; } }
-        /* Sticky con altura acotada + scroll propio: si la columna de controles es más corta,
-           sin esto la galería queda "colgando" fuera de la zona que el scroll de la página
-           alcanza a revelar (bug: solo scrollea la columna izquierda). */
-        .col-canvas{ position:sticky; top:16px; max-height:calc(100vh - 32px); overflow-y:auto; }
+        /* ════════════════ Layout a pantalla completa: controles arriba, resultado abajo ════════════════ */
+        .content{ max-width:1800px; margin:16px auto 0; padding:0 24px 24px; }
+        .shell{ display:flex; flex-direction:column; gap:22px; }
 
-        /* ── Reordenamiento del panel "Crear" (flujo natural, SIN mover el DOM) ──
-           col-controls es flex; #diploParams pasa a display:contents para que sus
-           secciones entren al mismo flujo flex y se puedan intercalar por `order`. */
-        .col-controls{ display:flex; flex-direction:column; }
+        /* ── Zona de controles: grid interno de varias columnas (NO una tira angosta) ──
+           #diploParams pasa a display:contents para que sus secciones entren al mismo
+           grid y se puedan intercalar por `order`, igual que antes en el layout flex. */
+        .col-controls{
+            display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr));
+            gap:14px; align-items:start;
+        }
         #diploParams.visible{ display:contents; }
-        .param-section{ order:9; }   /* base; los con id se piso abajo */
+        .param-section{ order:9; }   /* base; los con id se pisan abajo */
+        /* Elementos que deben ocupar todo el ancho del grid de controles */
+        #welcome, .intent-wrap, .prompt-block, #sec-prompt-builder, .seed-group, .primary, #simpleParams{
+            grid-column:1 / -1;
+        }
         #welcome{ order:1; }
         .intent-wrap{ order:2; }
         #sec-cn{ order:3; }            /* imagen de partida */
@@ -138,6 +140,11 @@
         #simpleParams{ order:14; }
         .seed-group{ order:20; }
         .primary{ order:21; }
+
+        /* ── Zona de resultado + galería: ABAJO de todo, a lo ancho completo ── */
+        .col-canvas{ width:100%; }
+        .col-canvas .canvas-card{ max-width:900px; margin:0 auto 14px; }
+        @media(max-width:640px){ .col-controls{ grid-template-columns:1fr; } }
 
         /* ════════════════ Bienvenida "¿Qué es esto?" (capa Aprender) ════════════════ */
         .welcome{
@@ -360,10 +367,10 @@
         .gallery-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
         .gallery-head h4{ margin:0; font-size:var(--fs-base); color:var(--text); }
         #galleryCount{ opacity:.6; font-weight:normal; }
-        #gallery{ display:grid; grid-template-columns:repeat(auto-fill,minmax(96px,1fr)); gap:8px; }
+        #gallery{ display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:10px; }
 
         /* ════════════════ Consola al pie (colapsable) ════════════════ */
-        .console-wrap{ max-width:1280px; margin:14px auto 30px; padding:0 18px; }
+        .console-wrap{ max-width:1800px; margin:14px auto 30px; padding:0 24px; }
         .log-section{
             background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); overflow:hidden;
         }
@@ -505,6 +512,7 @@
                         <button class="active" data-intent="generar" onclick="setIntent('generar')"><span class="em">🎨</span>Crear</button>
                         <button data-intent="editar" onclick="setIntent('editar')"><span class="em">✏️</span>Editar <span class="chip warn">L4</span></button>
                         <button data-intent="restaurar" onclick="setIntent('restaurar')"><span class="em">🔧</span>Restaurar</button>
+                        <!-- Seedance: en pausa, ver PENDIENTES.md. El botón "Video" ahora dispara el flujo Wan 2.2 (local, gratis) -->
                         <button data-intent="video" onclick="setIntent('video')"><span class="em">🎬</span>Video</button>
                     </div>
                     <p id="intentDesc">Creás una imagen desde una descripción (y, si querés, partiendo de una imagen).</p>
@@ -652,8 +660,14 @@
                         </div>
                     </div>
 
-                    <!-- 🎬 VIDEO (Seedance 2.0) — intención "Video" -->
-                    <div class="param-section flow-video collapsible" id="sec-video" data-modes="diplocolab diplo">
+                    <!--
+                    Seedance: EN PAUSA, ver PENDIENTES.md. Construido y validado por sintaxis;
+                    esperando decisión de Leo sobre pagar créditos de comfy.org. Código intacto,
+                    oculto de la UI (endpoint /api/generate-video y video.js siguen en el repo,
+                    simplemente no se llaman desde ningún lado visible).
+
+                    🎬 VIDEO (Seedance 2.0) — intención "Video"
+                    <div class="param-section flow-video collapsible" id="sec-video-seedance" data-modes="diplocolab diplo">
                         <h4 onclick="toggleSection(this)"><span class="section-icon">🎬</span> Video (Seedance 2.0) <span class="chip warn">$</span></h4>
                         <p class="section-desc">Generá un video corto desde un prompt de texto, o partiendo de una imagen de referencia. Corre por los <b>API nodes oficiales de ComfyUI</b> (nodos Seedance 2.0) — el cómputo lo hace ByteDance en la nube, <b>no tu Colab</b>. <b>Genera vía API de ByteDance — consume créditos de comfy.org.</b> Necesitás cargar tu API key de comfy.org en ⚙️ Configuración.</p>
 
@@ -729,6 +743,79 @@
                         <div style="margin-top:10px;">
                             <video id="videoResult" controls style="display:none;max-width:100%;border-radius:8px;border:1px solid var(--border);"></video>
                             <a id="videoDownload" style="display:none;margin-top:6px;" class="config-button" download>⬇️ Descargar video</a>
+                        </div>
+                    </div>
+                    -->
+
+                    <!-- 🎬 VIDEO (Wan 2.2 TI2V-5B — local, gratis, corre en tu Colab) — intención "Video" -->
+                    <div class="param-section flow-video collapsible" id="sec-video" data-modes="diplocolab diplo">
+                        <h4 onclick="toggleSection(this)"><span class="section-icon">🎬</span> Video (Wan 2.2 — local, gratis)</h4>
+                        <p class="section-desc">Generá un video corto desde un prompt de texto, o partiendo de una imagen (imagen→video). Corre con el modelo abierto <b>Wan 2.2 TI2V-5B</b>, con los nodos NATIVOS de tu ComfyUI (<code>WanImageToVideo</code>) — <b>corre local en tu Colab, sin costo por clip</b>, solo tiempo de generación. No necesita API key.</p>
+
+                        <div class="form-group">
+                            <label>¿Desde texto o desde imagen? <span class="info-tip" data-tip="Texto a video: describís la escena y listo (no subís imagen). Imagen a video: subís una foto/render y se anima a partir de ella.">i</span></label>
+                            <div style="display:flex;gap:14px;">
+                                <label style="display:flex;align-items:center;gap:6px;font-size:var(--fs-sm);cursor:pointer;"><input type="radio" name="videoWanMode" id="videoWanModeText" value="text" checked style="width:auto;"> Texto → Video</label>
+                                <label style="display:flex;align-items:center;gap:6px;font-size:var(--fs-sm);cursor:pointer;"><input type="radio" name="videoWanMode" id="videoWanModeImage" value="image" style="width:auto;"> Imagen → Video</label>
+                            </div>
+                        </div>
+
+                        <div class="form-group" id="videoWanImageGroup" style="display:none;">
+                            <input type="hidden" id="videoWanImage" value="">
+                            <label>📎 Imagen de partida <span class="info-tip" data-tip="Se sube al ComfyUI del Colab y se usa como primer frame del video (nodo WanImageToVideo).">i</span></label>
+                            <div class="file-upload-box">
+                                <input type="file" id="videoWanFile" accept="image/*">
+                                <small id="videoWanImageStatus" style="display:block;margin-top:6px;">Subí una imagen de partida.</small>
+                            </div>
+                            <img id="videoWanThumb" style="display:none;height:54px;border-radius:6px;border:1px solid var(--border);margin-top:6px;">
+                        </div>
+
+                        <div class="form-group">
+                            <label>📝 Prompt del video <span class="info-tip" data-tip="Describí la escena/acción en inglés. Ej: 'a cat walking through a neon-lit alley at night, cinematic'.">i</span></label>
+                            <textarea id="videoWanPrompt" placeholder="a lowpoly fox running through a misty forest, cinematic camera pan..." style="min-height:70px;"></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label>🚫 Negative prompt <span class="info-tip" data-tip="Lo que NO querés ver en el video.">i</span></label>
+                            <textarea id="videoWanNegPrompt" style="min-height:40px;">blurry, low quality, static, watermark, text</textarea>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Ancho <span class="info-tip" data-tip="Ancho en píxeles. Default 832 (el recomendado por Wan 2.2 5B). Más grande = más VRAM/tiempo.">i</span></label>
+                                <input type="number" id="videoWanWidth" value="832" min="256" max="1280" step="16">
+                            </div>
+                            <div class="form-group">
+                                <label>Alto <span class="info-tip" data-tip="Alto en píxeles. Default 480.">i</span></label>
+                                <input type="number" id="videoWanHeight" value="480" min="256" max="1280" step="16">
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Duración (frames) <span class="info-tip" data-tip="Cantidad de frames del video (length del nodo WanImageToVideo). 81 frames ≈ 5s a 16fps. Más frames = más VRAM/tiempo.">i</span></label>
+                                <div class="range-row">
+                                    <input type="range" id="videoWanLength" value="81" min="17" max="121" step="4">
+                                    <span class="range-value" id="videoWanLengthVal">81</span>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>Steps <span class="info-tip" data-tip="Pasos de muestreo. 20 es un buen default para Wan 2.2. Más = más lento.">i</span></label>
+                                <input type="number" id="videoWanSteps" value="20" min="1" max="60">
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>CFG <span class="info-tip" data-tip="Qué tanto sigue el prompt. Recomendado 4-6 para Wan 2.2.">i</span></label>
+                                <input type="number" id="videoWanCfg" value="5.0" min="1" max="15" step="0.5">
+                            </div>
+                        </div>
+
+                        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0;">
+                            <button type="button" class="config-button" id="videoWanBtn" onclick="generateVideoWan()">🎬 Generar video (Wan, gratis)</button>
+                        </div>
+                        <small id="videoWanStatus" style="display:block;margin-top:6px;"></small>
+                        <div style="margin-top:10px;">
+                            <video id="videoWanResult" controls style="display:none;max-width:100%;border-radius:8px;border:1px solid var(--border);"></video>
+                            <a id="videoWanDownload" style="display:none;margin-top:6px;" class="config-button" download>⬇️ Descargar video</a>
                         </div>
                     </div>
 
@@ -1188,6 +1275,7 @@
     <script src="js/prompt-builder.js"></script>
     <script src="js/restore.js"></script>
     <script src="js/video.js"></script>
+    <script src="js/video-wan.js"></script>
     <script src="js/fase3.js"></script>
     <script src="js/i18n.js"></script>
 </body>

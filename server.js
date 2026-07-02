@@ -379,8 +379,28 @@ io.on('connection', function(socket) {
 });
 
 // API endpoints para configuración
+// La API key de comfy.org NUNCA sale del server en texto plano (ni acá ni en logs):
+// se refleja solo como booleano (hasComfyOrgApiKey) para que el front sepa si ya hay
+// una cargada, sin exponerla en la respuesta HTTP / DevTools del cliente.
 app.get(BASE_PATH + '/api/config', (req, res) => {
-    res.json(config);
+    const { comfyOrgApiKey, ...safeConfig } = config;
+    res.json({ ...safeConfig, hasComfyOrgApiKey: !!comfyOrgApiKey });
+});
+
+// Guarda SOLO la API key de comfy.org, sin tocar comfyUrl/isRemote (evita pisar la
+// config del Colab). Endpoint separado para no mezclar con /api/config (que hoy
+// reconecta el WS al guardar, algo que no aplica acá).
+app.post(BASE_PATH + '/api/comfy-org-key', (req, res) => {
+    const { apiKey } = req.body || {};
+    if (typeof apiKey !== 'string' || !apiKey.trim()) {
+        return res.status(400).json({ success: false, error: 'falta apiKey' });
+    }
+    config.comfyOrgApiKey = apiKey.trim();
+    if (saveConfig(config)) {
+        res.json({ success: true });
+    } else {
+        res.status(500).json({ success: false, error: 'no se pudo guardar la configuración' });
+    }
 });
 
 // Ping HTTP real al ComfyUI configurado (via /system_stats). Confiable a traves del
@@ -680,6 +700,202 @@ app.post(BASE_PATH + '/api/edit-image', async (req, res) => {
         res.json({ success: true, url: out.url, filename: out.filename });
     } catch (e) {
         console.error('[edit-image] error:', e.message);
+        res.json({ success: false, error: e.message });
+    }
+});
+
+// ── Generar VIDEO con Seedance 2.0 (API nodes oficiales de ComfyUI, core) ──────────
+// Nodos reales usados (verificados contra comfy_api_nodes/nodes_bytedance.py del
+// mismo repo local, node_id): "ByteDance2TextToVideoNode" (texto → video) y
+// "ByteDance2ReferenceNode" (1 o más imágenes de referencia → video). Son API nodes:
+// el cómputo lo hace ByteDance/comfy.org, consumen créditos de la cuenta de comfy.org
+// del usuario. La key viaja por extra_data.api_key_comfy_org (NUNCA en el grafo ni en
+// los logs — es SENSITIVE_EXTRA_DATA_KEYS en ComfyUI, ver execution.py:202).
+const SEEDANCE2_MODEL_LABELS = ["Seedance 2.0", "Seedance 2.0 Fast"];
+const SEEDANCE2_RES_BY_MODEL = {
+    "Seedance 2.0": ["480p", "720p", "1080p"],
+    "Seedance 2.0 Fast": ["480p", "720p"]
+};
+const SEEDANCE2_RATIOS = ["16:9", "4:3", "1:1", "3:4", "9:16", "21:9", "adaptive"];
+
+app.post(BASE_PATH + '/api/generate-video', async (req, res) => {
+    try {
+        const apiKey = (config.comfyOrgApiKey || process.env.COMFY_ORG_API_KEY || '').trim();
+        if (!apiKey) {
+            return res.status(400).json({ success: false,
+                error: 'Falta la API key de comfy.org — cargala en Configuración.' });
+        }
+
+        const body = req.body || {};
+        const {
+            prompt,
+            mode = 'text',           // 'text' | 'image'
+            image,                   // nombre ya subido a ComfyUI (input/), solo si mode='image'
+            model = 'Seedance 2.0',  // "Seedance 2.0" | "Seedance 2.0 Fast"
+            resolution = '720p',
+            ratio = '16:9',
+            duration = 7,
+            generate_audio = true,
+            seed = 0,
+            watermark = false
+        } = body;
+
+        if (!prompt || !String(prompt).trim()) {
+            return res.json({ success: false, error: 'falta el prompt (describí el video que querés generar)' });
+        }
+        if (!SEEDANCE2_MODEL_LABELS.includes(model)) {
+            return res.json({ success: false, error: `modelo inválido: ${model}` });
+        }
+        const validResolutions = SEEDANCE2_RES_BY_MODEL[model];
+        if (!validResolutions.includes(resolution)) {
+            return res.json({ success: false,
+                error: `resolución "${resolution}" no soportada por ${model}. Válidas: ${validResolutions.join(', ')}` });
+        }
+        if (!SEEDANCE2_RATIOS.includes(ratio)) {
+            return res.json({ success: false, error: `ratio inválido: ${ratio}` });
+        }
+        const dur = Number(duration);
+        if (!Number.isFinite(dur) || dur < 4 || dur > 15) {
+            return res.json({ success: false, error: 'duration debe estar entre 4 y 15 segundos' });
+        }
+        if (mode === 'image' && !image) {
+            return res.json({ success: false, error: 'falta image (subí una imagen de referencia primero)' });
+        }
+
+        // Pre-chequeo: si el Colab todavia no tiene los nodos de Seedance 2.0 (ComfyUI
+        // desactualizado), error claro en vez de un 500 críptico.
+        const oi = await fetchObjectInfo().catch(() => null);
+        const nodeClass = mode === 'image' ? 'ByteDance2ReferenceNode' : 'ByteDance2TextToVideoNode';
+        if (oi && !oi[nodeClass]) {
+            return res.json({ success: false,
+                error: `Falta el nodo ${nodeClass} en el Colab. Reiniciá el Colab (clona ComfyUI latest en cada boot, así que un simple reinicio ya lo trae).` });
+        }
+
+        const modelWidget = {
+            model,
+            prompt: String(prompt),
+            resolution,
+            ratio,
+            duration: dur,
+            generate_audio: !!generate_audio
+        };
+
+        let wf;
+        if (mode === 'image') {
+            modelWidget.reference_images = { image_1: image };
+            wf = {
+                "1": {
+                    inputs: { model: modelWidget, seed: Number(seed) || 0, watermark: !!watermark },
+                    class_type: "ByteDance2ReferenceNode",
+                    _meta: { title: "Seedance 2.0 Reference to Video" }
+                }
+            };
+        } else {
+            wf = {
+                "1": {
+                    inputs: { model: modelWidget, seed: Number(seed) || 0, watermark: !!watermark },
+                    class_type: "ByteDance2TextToVideoNode",
+                    _meta: { title: "Seedance 2.0 Text to Video" }
+                }
+            };
+        }
+
+        console.log(`🎬 [generate-video] ${model} | mode=${mode} | ${resolution} ${ratio} ${dur}s | "${String(prompt).slice(0, 60)}"`);
+        // Video largo: timeout generoso (~15 min). Los nodos API hacen su propio polling
+        // interno contra comfy.org; queuePollDownload solo espera a que /history cierre.
+        const extraData = { api_key_comfy_org: apiKey };
+        const out = await queuePollDownload(wf, "1", 300, extraData);
+        res.json({ success: true, url: out.url, filename: out.filename });
+    } catch (e) {
+        console.error('[generate-video] error:', e.message);
+        res.json({ success: false, error: e.message });
+    }
+});
+
+// ── Generar VIDEO con Wan 2.2 TI2V-5B (nodos NATIVOS de ComfyUI, sin custom node) ──
+// Modelo abierto, corre LOCAL en el Colab de Leo (sin API paga, sin costo por clip).
+// Grafo con el nodo real `WanImageToVideo` (comfy_extras/nodes_wan.py, confirmado
+// contra el código fuente local): admite start_image OPCIONAL — con imagen hace
+// imagen→video, sin imagen hace texto→video puro (mismo nodo para ambos modos).
+// Pesos: diffusion_models/Wan2.2-TI2V-5B-Q8_0.gguf (QuantStack, vía UnetLoaderGGUF
+// — mismo loader ya usado para Qwen-Image-Edit), text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors
+// (Comfy-Org, YA está en el notebook para Wan), vae/wan2.2_vae.safetensors (VAE
+// propio del TI2V-5B, no confundir con wan_2.1_vae que es del 14B).
+const WAN_UNET = 'Wan2.2-TI2V-5B-Q8_0.gguf';
+const WAN_CLIP = 'umt5_xxl_fp8_e4m3fn_scaled.safetensors';
+const WAN_VAE = 'wan2.2_vae.safetensors';
+
+app.post(BASE_PATH + '/api/generate-video-wan', async (req, res) => {
+    try {
+        const body = req.body || {};
+        const {
+            prompt,
+            negative_prompt = '',
+            mode = 'text',            // 'text' | 'image'
+            image,                    // nombre ya subido a ComfyUI (input/), solo si mode='image'
+            width = 832,
+            height = 480,
+            length = 81,
+            steps = 20,
+            cfg = 5.0,
+            seed
+        } = body;
+
+        if (!prompt || !String(prompt).trim()) {
+            return res.json({ success: false, error: 'falta el prompt (describí el video que querés generar)' });
+        }
+        if (mode === 'image' && !image) {
+            return res.json({ success: false, error: 'falta image (subí una imagen de partida primero)' });
+        }
+        const w = Number(width) || 832;
+        const h = Number(height) || 480;
+        const len = Number(length) || 81;
+        const realSteps = Number(steps) || 20;
+        const realCfg = Number(cfg) || 5.0;
+        const realSeed = (seed !== undefined && seed !== null && seed !== '')
+            ? Number(seed) : (Math.floor(Math.random() * 1e15) + 1);
+
+        // Pre-chequeo: si faltan nodos en el Colab (aún no re-corrido con los pesos de
+        // Wan), error claro y accionable en vez de un 500 críptico.
+        const oi = await fetchObjectInfo().catch(() => null);
+        if (oi) {
+            const need = ["UnetLoaderGGUF", "CLIPLoader", "VAELoader", "CLIPTextEncode",
+                "WanImageToVideo", "KSamplerAdvanced", "VAEDecode", "CreateVideo", "SaveVideo"];
+            const missing = need.filter(n => !oi[n]);
+            if (missing.length) return res.json({ success: false,
+                error: `Faltan nodos en el Colab: ${missing.join(", ")}. Reiniciá el Colab con el notebook actualizado (celda de Wan 2.2 corrida).` });
+        }
+
+        const wf = {
+            "1": { inputs: { clip_name: WAN_CLIP, type: "wan", device: "default" }, class_type: "CLIPLoader", _meta: { title: "wan clip" } },
+            "2": { inputs: { unet_name: WAN_UNET }, class_type: "UnetLoaderGGUF", _meta: { title: "Wan 2.2 TI2V-5B GGUF" } },
+            "3": { inputs: { vae_name: WAN_VAE }, class_type: "VAELoader", _meta: { title: "wan vae" } },
+            "4": { inputs: { text: String(prompt), clip: ["1", 0] }, class_type: "CLIPTextEncode", _meta: { title: "positive" } },
+            "5": { inputs: { text: String(negative_prompt || ""), clip: ["1", 0] }, class_type: "CLIPTextEncode", _meta: { title: "negative" } },
+            "6": { inputs: { positive: ["4", 0], negative: ["5", 0], vae: ["3", 0], width: w, height: h, length: len, batch_size: 1 },
+                    class_type: "WanImageToVideo", _meta: { title: "Wan image/text to video" } },
+            "7": { inputs: { add_noise: "enable", enable_denoise: "enable", noise_seed: realSeed,
+                    steps: realSteps, cfg: realCfg, sampler_name: "euler", scheduler: "simple",
+                    start_at_step: 0, end_at_step: 10000, return_with_leftover_noise: "disable",
+                    model: ["2", 0], positive: ["6", 0], negative: ["6", 1], latent_image: ["6", 2] },
+                    class_type: "KSamplerAdvanced", _meta: { title: "wan sampler" } },
+            "8": { inputs: { samples: ["7", 0], vae: ["3", 0] }, class_type: "VAEDecode", _meta: { title: "decode" } },
+            "9": { inputs: { fps: 16, images: ["8", 0] }, class_type: "CreateVideo", _meta: { title: "create video" } },
+            "10": { inputs: { filename_prefix: "wan2.2_video", format: "auto", codec: "auto", video: ["9", 0] },
+                    class_type: "SaveVideo", _meta: { title: "save video" } }
+        };
+        if (mode === 'image') {
+            wf["6"].inputs.start_image = ["11", 0];
+            wf["11"] = { inputs: { image }, class_type: "LoadImage", _meta: { title: "wan start image" } };
+        }
+
+        console.log(`🎬 [generate-video-wan] mode=${mode} | ${w}x${h} len=${len} steps=${realSteps} cfg=${realCfg} | "${String(prompt).slice(0, 60)}"`);
+        // Video local: sin llamada a API externa, pero la 1ª carga del modelo (~5-6GB
+        // GGUF + text encoder) puede tardar; timeout generoso como en edit-image.
+        const out = await queuePollDownload(wf, "10", 240);
+        res.json({ success: true, url: out.url, filename: out.filename });
+    } catch (e) {
+        console.error('[generate-video-wan] error:', e.message);
         res.json({ success: false, error: e.message });
     }
 });
@@ -1027,8 +1243,13 @@ async function uploadImage(filePath) {
     });
 }
 
-async function queuePrompt(promptWorkflow) {
-    const postData = JSON.stringify({ prompt: promptWorkflow, client_id: clientId });
+// extraData (opcional): se mergea en el POST /prompt como "extra_data". Lo usan los
+// API nodes oficiales de ComfyUI (ej. Seedance 2.0) para recibir la key de comfy.org
+// sin que viaje en el grafo (server.js:202 de execution.py la trata como sensible).
+async function queuePrompt(promptWorkflow, extraData) {
+    const body = { prompt: promptWorkflow, client_id: clientId };
+    if (extraData) body.extra_data = extraData;
+    const postData = JSON.stringify(body);
     const parsedUrl = parseComfyUrl(config.comfyUrl);
     const httpModule = getHttpModule(config.comfyUrl);
     
@@ -1149,8 +1370,8 @@ async function pollHistoryAndEmit(promptId, ws, outputNode, promptText) {
 // Encola un workflow, polea /history y baja la imagen del outputNode a public/imagenes.
 // Devuelve { filename, url } servible por el browser. Para flujos SINCRONICOS (preview
 // del preprocesador) que responden por HTTP, no por WS.
-async function queuePollDownload(wf, outputNode, maxTries = 100) {
-    const promptId = await queuePrompt(wf);
+async function queuePollDownload(wf, outputNode, maxTries = 100, extraData) {
+    const promptId = await queuePrompt(wf, extraData);
     const intervalMs = 3000; // maxTries=100 ≈ 5 min (default); más para cargas pesadas (Qwen-Image-Edit)
     for (let i = 0; i < maxTries; i++) {
         await new Promise(r => setTimeout(r, intervalMs));

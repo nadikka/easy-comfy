@@ -7,7 +7,14 @@ async function loadConfig() {
         
         document.getElementById('comfyUrl').value = config.comfyUrl;
         document.getElementById('currentUrl').textContent = `URL actual: ${config.comfyUrl}`;
-        
+
+        // API key de comfy.org (Video/Seedance 2.0). El server NUNCA manda la key real
+        // de vuelta (ver /api/config en server.js); solo dice si ya hay una guardada.
+        const keyStatus = document.getElementById('comfyOrgApiKeyStatus');
+        if (keyStatus) {
+            keyStatus.textContent = config.hasComfyOrgApiKey ? '✅ Hay una key guardada.' : '⚠️ Todavía no cargaste una key.';
+        }
+
         Logger.info(`Configuración cargada: ${config.comfyUrl}`);
         Logger.info(`Modo: ${config.isRemote ? 'Remoto (Colab)' : 'Local'}`);
         
@@ -77,6 +84,35 @@ async function saveConfig() {
         Logger.error('Error de red: ' + error.message);
         alert(window.i18nT ? window.i18nT('Error al guardar configuración') : 'Error al guardar configuración');
         updateStatusIndicator(false);
+    }
+}
+
+// Guarda la API key de comfy.org (Video / Seedance 2.0). Endpoint separado de
+// saveConfig() para no pisar comfyUrl/isRemote ni disparar la reconexión del WS.
+async function saveComfyOrgApiKey() {
+    const input = document.getElementById('comfyOrgApiKey');
+    const status = document.getElementById('comfyOrgApiKeyStatus');
+    const apiKey = (input && input.value || '').trim();
+    if (!apiKey) {
+        if (status) status.textContent = '❌ Pegá la key antes de guardar.';
+        return;
+    }
+    try {
+        const resp = await fetch(apiUrl('/api/comfy-org-key'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ apiKey })
+        });
+        const d = await resp.json();
+        if (d.success) {
+            if (status) status.textContent = '✅ Key guardada.';
+            if (input) input.value = '';
+            Logger.info('✓ API key de comfy.org guardada');
+        } else {
+            if (status) status.textContent = '❌ ' + (d.error || 'no se pudo guardar');
+        }
+    } catch (e) {
+        if (status) status.textContent = '❌ Error de red: ' + e.message;
     }
 }
 

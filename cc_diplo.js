@@ -37,7 +37,10 @@ const steps = Number(arg('--steps', 8));
 const cfgScale = Number(arg('--cfg', 1.0));
 const width = Number(arg('--w', 1024));
 const height = Number(arg('--h', 640));
+const denoise = Number(arg('--denoise', 1.0));
 const neg = arg('--neg', 'blurry, ugly, low quality, deformed hands, extra limbs, text, watermark');
+const loraName = arg('--lora', null);
+const loraStrength = Number(arg('--lora-str', 0.8));
 
 const mod = baseUrl.startsWith('https') ? https : http;
 
@@ -84,8 +87,27 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     wf['3'].inputs.seed = seed;
     wf['3'].inputs.steps = steps;
     wf['3'].inputs.cfg = cfgScale;
+    wf['3'].inputs.denoise = denoise;
     wf['13'].inputs.width = width;
     wf['13'].inputs.height = height;
+
+    if (loraName) {
+        wf['90'] = {
+            inputs: {
+                lora_name: loraName,
+                strength_model: loraStrength,
+                strength_clip: 1.0,
+                model: ['16', 0],
+                clip: ['28', 0]
+            },
+            class_type: 'LoraLoader',
+            _meta: { title: 'LoRA (cc_diplo)' }
+        };
+        wf['3'].inputs.model = ['90', 0];
+        wf['6'].inputs.clip = ['90', 1];
+        wf['7'].inputs.clip = ['90', 1];
+        console.log(`-> LoRA: ${loraName} @ ${loraStrength}`);
+    }
 
     console.log(`-> Colab: ${baseUrl}`);
     console.log(`-> prompt: "${prompt}"  seed=${seed} steps=${steps} cfg=${cfgScale} ${width}x${height}`);
