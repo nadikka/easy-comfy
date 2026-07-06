@@ -193,7 +193,12 @@ function nameFromUrl(url) {
     try { return decodeURIComponent(url.split('?')[0].split('/').pop()); } catch (e) { return 'imagen.png'; }
 }
 
-// Agrega una imagen a la galería y la pone como vista grande. onLoad/onError opcionales.
+// Video (FILM/vid2vid/Wan) vs imagen: por extensión del archivo.
+function isVideoUrl(url) {
+    return /\.(mp4|webm)$/i.test(url.split('?')[0]);
+}
+
+// Agrega una imagen O VIDEO a la galería y lo pone como vista grande. onLoad/onError opcionales.
 function addToGallery(url, onLoad, onError) {
     const cleanUrl = url.split('?')[0];
     if (galleryUrls.has(cleanUrl)) { if (onLoad) onLoad(); return; }
@@ -202,26 +207,37 @@ function addToGallery(url, onLoad, onError) {
     const gallery = document.getElementById('gallery');
     const section = document.getElementById('gallerySection');
     const bust = cleanUrl + '?t=' + Date.now();
+    const isVideo = isVideoUrl(cleanUrl);
 
     // Vista grande = la más nueva
-    const big = document.createElement('img');
-    big.src = bust; big.alt = 'Imagen generada';
+    const big = isVideo ? document.createElement('video') : document.createElement('img');
+    big.src = bust;
+    if (isVideo) { big.controls = true; big.muted = true; big.preload = 'metadata'; big.style.maxWidth = '100%'; }
+    else { big.alt = 'Imagen generada'; }
     big.onload = () => { if (onLoad) onLoad(); };
     big.onerror = () => { if (onError) onError(); };
+    if (isVideo) {
+        // <video> no dispara onload de forma confiable en todos los navegadores -> loadeddata
+        big.addEventListener('loadeddata', () => { if (onLoad) onLoad(); });
+    }
     imageContainer.innerHTML = '';
     imageContainer.appendChild(big);
 
     // Miniatura en la grilla
     const cell = document.createElement('div');
     cell.style.cssText = 'position:relative; border-radius:6px; overflow:hidden; cursor:pointer; aspect-ratio:1; background:#f0f0f0;';
-    const thumb = document.createElement('img');
-    thumb.src = bust; thumb.alt = nameFromUrl(cleanUrl);
+    const thumb = isVideo ? document.createElement('video') : document.createElement('img');
+    thumb.src = bust;
     thumb.style.cssText = 'width:100%; height:100%; object-fit:cover; display:block;';
     thumb.title = 'Click para ver grande';
+    if (isVideo) { thumb.muted = true; thumb.preload = 'metadata'; }
+    else { thumb.alt = nameFromUrl(cleanUrl); thumb.loading = 'lazy'; thumb.decoding = 'async'; }
     thumb.addEventListener('click', () => {
         imageContainer.innerHTML = '';
-        const v = document.createElement('img');
-        v.src = bust; v.alt = 'Imagen generada';
+        const v = isVideo ? document.createElement('video') : document.createElement('img');
+        v.src = bust;
+        if (isVideo) { v.controls = true; v.muted = true; v.preload = 'metadata'; v.style.maxWidth = '100%'; }
+        else { v.alt = 'Imagen generada'; }
         imageContainer.appendChild(v);
         imageContainer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     });
@@ -307,6 +323,59 @@ function randomSeed() {
     return Math.floor(Math.random() * 1e15) + 1;
 }
 
+// ── LoRA-stack "especiero" (Clase 5): filas dinámicas además del LoRA principal ──
+let loraStackRowSeq = 0;
+function addLoraStackRow() {
+    const container = document.getElementById('loraStackExtra');
+    if (!container) return;
+    const rowId = 'loraStackRow' + (loraStackRowSeq++);
+    const options = (window._loraOptionsCache || [])
+        .map(n => `<option value="${n}">${n}</option>`).join('');
+    const row = document.createElement('div');
+    row.id = rowId;
+    row.className = 'form-row';
+    row.style.cssText = 'align-items:center;gap:8px;margin-top:6px;';
+    row.innerHTML = `
+        <div class="form-group" style="flex:2;">
+            <select class="lora-stack-name">${options || '<option value="">— (sin LoRAs cargados) —</option>'}</select>
+        </div>
+        <div class="form-group" style="flex:1;">
+            <div class="range-row">
+                <input type="range" class="lora-stack-strength" min="0.05" max="1.5" step="0.05" value="0.20">
+                <span class="range-value lora-stack-strength-val">0.20</span>
+            </div>
+        </div>
+        <button type="button" class="config-button" onclick="document.getElementById('${rowId}').remove()">🗑️</button>
+    `;
+    container.appendChild(row);
+    const slider = row.querySelector('.lora-stack-strength');
+    const val = row.querySelector('.lora-stack-strength-val');
+    slider.addEventListener('input', () => { val.textContent = parseFloat(slider.value).toFixed(2); });
+}
+
+// Arma el array params.loras: el LoRA principal (Usar LoRA) + cada fila del especiero.
+function collectLoraStackParams() {
+    const loras = [];
+    const useLora = document.getElementById('useLora');
+    const loraName = getVal('loraName', '');
+    if (useLora && useLora.checked && loraName) {
+        loras.push({
+            name: loraName,
+            strength_model: getVal('loraStrengthModel', 0.80),
+            strength_clip: getVal('loraStrengthClip', 1.00)
+        });
+    }
+    document.querySelectorAll('#loraStackExtra .form-row').forEach(row => {
+        const nameSel = row.querySelector('.lora-stack-name');
+        const strengthEl = row.querySelector('.lora-stack-strength');
+        const name = nameSel && nameSel.value;
+        if (!name) return;
+        const strength = parseFloat(strengthEl.value) || 0.20;
+        loras.push({ name, strength_model: strength, strength_clip: strength });
+    });
+    return loras;
+}
+
 function collectParams() {
     if (DIPLO_LIKE.includes(currentWorkflow)) {
         return {
@@ -329,6 +398,9 @@ function collectParams() {
             lora_name: getVal('loraName', ''),
             lora_strength_model: getVal('loraStrengthModel', 0.80),
             lora_strength_clip: getVal('loraStrengthClip', 1.00),
+            // LoRA-stack "especiero": array [{name,strength_model,strength_clip}]. Si tiene
+            // items, el server la usa completa (el LoRA principal ya está incluido adentro).
+            loras: (typeof collectLoraStackParams === 'function') ? collectLoraStackParams() : [],
             // img2img — usa la imagen subida como latente inicial (en vez de ControlNet).
             // Gateado: solo true si el toggle está ON Y hay una imagen subida de verdad
             // (#refImage con valor), para no mandar al Colab un archivo inexistente.
@@ -362,7 +434,10 @@ function collectParams() {
             vae_name: getVal('vaeName', 'ae.safetensors'),
             clip_name: getVal('clipName', 'qwen_3_4b_fp8_mixed.safetensors'),
             upscale_model_name: getVal('upscaleModel', '2x-AnimeSharpV4_RCAN.safetensors'),
-            model_patch_name: getVal('modelPatchName', 'Z-Image-Turbo-Fun-Controlnet-Union.safetensors')
+            model_patch_name: getVal('modelPatchName', 'Z-Image-Turbo-Fun-Controlnet-Union.safetensors'),
+            // Calidad (Clase 5): Turbo (default) | Base | Mixta — ver pills en #sec-quality.
+            quality: (document.querySelector('input[name="qualityPick"]:checked') || {}).value || 'turbo',
+            refine: !!(document.getElementById('useRefine') && document.getElementById('useRefine').checked)
         };
     } else {
         return {

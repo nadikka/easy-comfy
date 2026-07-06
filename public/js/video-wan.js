@@ -111,7 +111,8 @@ async function generateVideoWan() {
         height: Number((document.getElementById('videoWanHeight') || {}).value) || 480,
         length: Number((document.getElementById('videoWanLength') || {}).value) || 81,
         steps: Number((document.getElementById('videoWanSteps') || {}).value) || 20,
-        cfg: Number((document.getElementById('videoWanCfg') || {}).value) || 5.0
+        cfg: Number((document.getElementById('videoWanCfg') || {}).value) || 5.0,
+        smooth: !!(document.getElementById('videoWanSmooth') && document.getElementById('videoWanSmooth').checked)
     };
 
     if (btn) { btn.disabled = true; btn.textContent = '⏳ Generando...'; }
@@ -138,6 +139,7 @@ async function generateVideoWan() {
                 dlLink.download = d.filename || 'video.mp4';
                 dlLink.style.display = 'inline-block';
             }
+            if (typeof addToGallery === 'function') addToGallery(d.url);
         } else {
             if (status) status.textContent = '❌ ' + (d.error || 'no se pudo generar el video');
         }

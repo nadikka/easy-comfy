@@ -48,6 +48,24 @@
         try { localStorage.setItem('cw-intent', k); } catch (e) {}
     };
 
+    // ── Calidad de imagen (Turbo/Base/Mixta): CFG/steps quedan clavados para Turbo,
+    // pero Base/Mixta los necesita libres — al cambiar de pill, si el usuario no tocó
+    // el valor default de Turbo, lo empujamos al default recomendado para la calidad
+    // elegida (no pisa un valor que el usuario ya haya puesto a mano).
+    window.onQualityChange = function () {
+        var picked = (document.querySelector('input[name="qualityPick"]:checked') || {}).value || 'turbo';
+        var cfg = document.getElementById('diploCfg');
+        var steps = document.getElementById('diploSteps');
+        if (!cfg || !steps) return;
+        if (picked === 'turbo') {
+            if (cfg.value === '4' || cfg.value === '4.0') cfg.value = '1.0';
+            if (steps.value === '20') steps.value = '8';
+        } else {
+            if (cfg.value === '1' || cfg.value === '1.0') cfg.value = '4.0';
+            if (steps.value === '8') steps.value = '20';
+        }
+    };
+
     // ── "Probá esto" (Nivel 3): setea un valor de demostración en un control ──
     // Actualiza el display de los sliders y dispara input/change para que los
     // listeners (script.js, preproc.js) reaccionen igual que si lo moviera el user.

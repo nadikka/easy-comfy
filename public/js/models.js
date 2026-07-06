@@ -86,6 +86,10 @@ async function loadDiploModels(forceReload = false) {
             return;
         }
 
+        // Cachea la lista de LoRAs para el mixer "especiero" (sec-lora), que arma sus
+        // propios <select> dinámicos y no puede esperar a que loadDiploModels corra de nuevo.
+        if (Array.isArray(data.options.lora_name)) window._loraOptionsCache = data.options.lora_name;
+
         let totalLoaded = 0;
         mapping.forEach(({ id, key }) => {
             const sel = document.getElementById(id);

@@ -131,12 +131,15 @@
         .prompt-block{ order:5; }
         #sec-prompt-builder{ order:6; }/* constructor, pegado al prompt */
         #sec-lora{ order:7; }          /* LoRA arriba */
+        #sec-quality{ order:8; }       /* Calidad (Turbo/Base/Mixta) — antes del KSampler */
         #sec-ksampler{ order:8; }      /* KSampler, tras el prompt */
         #sec-upscale{ order:9; }
         #sec-size{ order:19; }         /* Tamaño = último nodo (antes de seed/generar) */
         #sec-qwen-edit{ order:11; }    /* (solo modo Editar) */
         #sec-restaurar{ order:12; }    /* (solo modo Restaurar) */
         #sec-video{ order:13; }        /* (solo modo Video, Seedance 2.0) */
+        #sec-video-interp{ order:13; } /* Suavizar/Slow motion (FILM) — tras Wan, mismo intent Video */
+        #sec-video-v2v{ order:13; }    /* Reimaginar video (vid2vid Octavio) — idem, orden por posición en el DOM */
         #simpleParams{ order:14; }
         .seed-group{ order:20; }
         .primary{ order:21; }
@@ -331,7 +334,7 @@
             border-radius:var(--radius-sm); cursor:pointer; font-size:var(--fs-sm); white-space:nowrap;
         }
         .random-button:hover{ border-color:var(--border-strong); color:var(--text); }
-        .primary{ position:sticky; bottom:0; padding:8px 0 14px; background:linear-gradient(to top,var(--bg) 70%,transparent); }
+        .primary{ padding:8px 0 14px; }
         .generate-button{
             width:100%; padding:14px; background:var(--accent); color:#fff; border:none; border-radius:var(--radius);
             cursor:pointer; font-size:var(--fs-base); font-weight:600; transition:background .2s;
@@ -770,6 +773,26 @@
                             <img id="videoWanThumb" style="display:none;height:54px;border-radius:6px;border:1px solid var(--border);margin-top:6px;">
                         </div>
 
+                        <!-- 🤖 Prompt de transición (Clase 5): 2 imágenes -> Qwen-VL arma el prompt del entremedio -->
+                        <div class="form-group" style="background:var(--bg-soft, #f6f6f6);border-radius:8px;padding:10px;">
+                            <label style="font-weight:600;">🤖 ¿No sabés qué escribir? Generalo desde 2 imágenes <span class="info-tip" data-tip="De la Clase 5: le mostraron el frame inicial y el final a un modelo de visión (Qwen-VL) y le pidieron el prompt de la transición. Subí dónde arranca y dónde termina la escena y arma el texto por vos.">i</span></label>
+                            <div class="form-row" style="margin-top:6px;">
+                                <div class="form-group">
+                                    <label style="font-weight:400;">Frame inicial</label>
+                                    <input type="file" id="transStartFile" accept="image/*">
+                                </div>
+                                <div class="form-group">
+                                    <label style="font-weight:400;">Frame final</label>
+                                    <input type="file" id="transEndFile" accept="image/*">
+                                </div>
+                            </div>
+                            <input type="text" id="transHint" class="config-input" placeholder="Pista opcional (ej: 'hay viento', 'cámara lenta')..." style="margin-top:6px;">
+                            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px;">
+                                <button type="button" class="config-button" id="transBtn" onclick="generateTransitionPrompt()">🤖 Generar prompt de transición</button>
+                            </div>
+                            <small id="transStatus" style="display:block;margin-top:6px;"></small>
+                        </div>
+
                         <div class="form-group">
                             <label>📝 Prompt del video <span class="info-tip" data-tip="Describí la escena/acción en inglés. Ej: 'a cat walking through a neon-lit alley at night, cinematic'.">i</span></label>
                             <textarea id="videoWanPrompt" placeholder="a lowpoly fox running through a misty forest, cinematic camera pan..." style="min-height:70px;"></textarea>
@@ -809,6 +832,13 @@
                             </div>
                         </div>
 
+                        <div class="form-group">
+                            <label style="display:flex;align-items:center;gap:6px;font-weight:400;cursor:pointer;">
+                                <input type="checkbox" id="videoWanSmooth" style="width:auto;">
+                                ✨ Suavizar salida ×2 (FILM) <span class="info-tip" data-tip="Después de generar, interpola frames con FILM VFI antes de armar el video final — el mismo truco de la sección Suavizar/Slow motion, aplicado directo a la salida de Wan.">i</span>
+                            </label>
+                        </div>
+
                         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0;">
                             <button type="button" class="config-button" id="videoWanBtn" onclick="generateVideoWan()">🎬 Generar video (Wan, gratis)</button>
                         </div>
@@ -819,9 +849,142 @@
                         </div>
                     </div>
 
+                    <!-- 🎞️ Suavizar / Slow motion (FILM VFI) — cualquier video, generado o subido -->
+                    <div class="param-section flow-video collapsible collapsed" id="sec-video-interp" data-modes="diplocolab diplo">
+                        <h4 onclick="toggleSection(this)"><span class="section-icon">🎞️</span> Suavizar / Slow motion (FILM)</h4>
+                        <p class="section-desc">"FILM es el upscaler del tiempo" (Clase 5): en vez de inventar píxeles, inventa <b>frames intermedios</b>. Subí CUALQUIER video (generado acá o de tu compu) y suavizalo o convertilo en cámara lenta — no vuelve a generar nada, solo interpola.</p>
+
+                        <div class="form-group">
+                            <label>📎 Video a suavizar <span class="info-tip" data-tip="MP4/WebM. Se sube a tu Colab (VHS_LoadVideo lo carga ahí).">i</span></label>
+                            <div class="file-upload-box">
+                                <input type="file" id="interpFile" accept="video/mp4,video/webm">
+                                <small id="interpStatus" style="display:block;margin-top:6px;">Subí un video.</small>
+                            </div>
+                            <input type="hidden" id="interpVideoName" value="">
+                        </div>
+
+                        <div class="form-group">
+                            <label>¿Fps de origen del video? <span class="info-tip" data-tip="Fps real del video que subiste (VHS lo puede leer solo, pero declararlo ayuda a calcular el fps de salida). 24 es un default razonable.">i</span></label>
+                            <input type="number" id="interpSourceFps" value="24" min="1" max="120">
+                        </div>
+
+                        <div class="form-group">
+                            <label>Multiplicador <span class="info-tip" data-tip="×2 suave, ×4/×6 slow motion marcado. Cuantos más frames interpola, más tarda.">i</span></label>
+                            <div style="display:flex;gap:14px;">
+                                <label style="display:flex;align-items:center;gap:6px;font-size:var(--fs-sm);cursor:pointer;"><input type="radio" name="interpMultiplier" value="2" checked style="width:auto;"> ×2</label>
+                                <label style="display:flex;align-items:center;gap:6px;font-size:var(--fs-sm);cursor:pointer;"><input type="radio" name="interpMultiplier" value="4" style="width:auto;"> ×4</label>
+                                <label style="display:flex;align-items:center;gap:6px;font-size:var(--fs-sm);cursor:pointer;"><input type="radio" name="interpMultiplier" value="6" style="width:auto;"> ×6</label>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label>¿Qué querés lograr? <span class="info-tip" data-tip="Más fluido: sube el fps final, el video dura lo mismo pero se ve más suave. Cámara lenta: el fps queda igual, así que el video se alarga y se ve en slow motion.">i</span></label>
+                            <div style="display:flex;gap:14px;">
+                                <label style="display:flex;align-items:center;gap:6px;font-size:var(--fs-sm);cursor:pointer;"><input type="radio" name="interpMode" id="interpModeFluid" value="fluid" checked style="width:auto;"> Más fluido (fps×N)</label>
+                                <label style="display:flex;align-items:center;gap:6px;font-size:var(--fs-sm);cursor:pointer;"><input type="radio" name="interpMode" id="interpModeSlowmo" value="slowmo" style="width:auto;"> Cámara lenta (mismos fps)</label>
+                            </div>
+                        </div>
+
+                        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0;">
+                            <button type="button" class="config-button" id="interpBtn" onclick="interpolateVideo()">🎞️ Suavizar video</button>
+                        </div>
+                        <small id="interpStatusMsg" style="display:block;margin-top:6px;"></small>
+                        <div style="margin-top:10px;">
+                            <video id="interpResult" controls style="display:none;max-width:100%;border-radius:8px;border:1px solid var(--border);"></video>
+                            <a id="interpDownload" style="display:none;margin-top:6px;" class="config-button" download>⬇️ Descargar video</a>
+                        </div>
+                    </div>
+
+                    <!-- 🎬 Reimaginar un video (vid2vid estilo Octavio) -->
+                    <div class="param-section flow-video collapsible collapsed" id="sec-video-v2v" data-modes="diplocolab diplo">
+                        <h4 onclick="toggleSection(this)"><span class="section-icon">🎬</span> Reimaginar un video</h4>
+                        <p class="section-desc">El workflow que mostró <b>Octavio</b>, un compañero, en la Clase 5 — el hit de la clase. Toma un video y lo re-dibuja frame por frame combinando <b>profundidad + variación al mismo tiempo</b> (de ahí sale la consistencia, no de la seed). Necesita el modelo de imagen (Z-Image) — misma GPU que "Generar".</p>
+
+                        <div class="form-group">
+                            <label>📎 Video a reimaginar <span class="info-tip" data-tip="MP4/WebM. Se sube a tu Colab.">i</span></label>
+                            <div class="file-upload-box">
+                                <input type="file" id="v2vFile" accept="video/mp4,video/webm">
+                                <small id="v2vFileStatus" style="display:block;margin-top:6px;">Subí un video.</small>
+                            </div>
+                            <input type="hidden" id="v2vVideoName" value="">
+                        </div>
+
+                        <div class="form-group">
+                            <label>📝 Prompt (en inglés) <span class="info-tip" data-tip="Describí lo que querés VER en el video reimaginado (estilo, personaje, escena). El movimiento lo pone el video original.">i</span></label>
+                            <textarea id="v2vPrompt" placeholder="a claymation character walking, stop motion style, warm lighting..." style="min-height:70px;"></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label>🚫 Negative prompt <span class="info-tip" data-tip="Lo que NO querés ver.">i</span></label>
+                            <textarea id="v2vNegPrompt" style="min-height:40px;">blurry, low quality, static, watermark, text</textarea>
+                        </div>
+
+                        <div class="form-group">
+                            <label>Denoise <span class="info-tip" data-tip="0.14 fiel al video original ↔ 0.45 se va de mambo (cambia mucho, puede perder consistencia entre frames). Empezá bajo.">i</span></label>
+                            <div class="range-row">
+                                <input type="range" id="v2vDenoise" min="0.1" max="0.6" step="0.01" value="0.3">
+                                <span class="range-value" id="v2vDenoiseVal">0.30</span>
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Fps de trabajo <span class="info-tip" data-tip="force_rate: baja el fps del video de entrada para aliviar el proceso (16 es un buen default).">i</span></label>
+                                <input type="number" id="v2vForceRate" value="16" min="4" max="30">
+                            </div>
+                            <div class="form-group">
+                                <label>ControlNet strength <span class="info-tip" data-tip="Cuánto pesa la estructura extraída (profundidad/pose/bordes) sobre el resultado.">i</span></label>
+                                <div class="range-row">
+                                    <input type="range" id="v2vCnStrength" min="0" max="1" step="0.05" value="0.8">
+                                    <span class="range-value" id="v2vCnStrengthVal">0.80</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label>¿Qué estructura seguir? <span class="info-tip" data-tip="Depth (profundidad): lo que usó Octavio, mantiene la disposición 3D de la escena. OpenPose: copia la pose/coreografía del video (personas). Canny: sigue los bordes/contornos (útil para texturizar objetos/productos).">i</span></label>
+                            <select id="v2vPreprocessor">
+                                <option value="DepthAnythingV2Preprocessor" selected>Profundidad (Depth) — lo que mostró Octavio</option>
+                                <option value="DWPreprocessor">Pose (OpenPose) — copiar coreografía/movimiento</option>
+                                <option value="CannyEdgePreprocessor">Bordes (Canny) — texturizar objetos/productos</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group" style="background:var(--bg-soft, #f6f6f6);border-radius:8px;padding:10px;">
+                            <label style="display:flex;align-items:center;gap:6px;font-weight:600;cursor:pointer;">
+                                <input type="checkbox" id="v2vPreviewMode" checked style="width:auto;">
+                                🧪 Probar 1 frame primero <span class="info-tip" data-tip="El truco de una alumna: antes de gastar tiempo/créditos en el video completo, probá con 1 solo frame — te devuelve una imagen suelta para que ajustes denoise/prompt.">i</span>
+                            </label>
+                            <small style="display:block;margin-top:6px;color:var(--text-faint);">Recomendado: dejalo tildado, mirá el resultado, y si te gusta destildalo y corré el video completo.</small>
+                        </div>
+
+                        <div class="form-group" id="v2vFrameCapGroup" style="display:none;">
+                            <label>¿Cuántos frames del video completo? <span class="info-tip" data-tip="0 = todos. Un video corto (2-4s) ya son 30-60+ frames — cada uno pasa por el motor de imagen, así que tarda.">i</span></label>
+                            <input type="number" id="v2vFrameLoadCap" value="33" min="2" max="500">
+                        </div>
+
+                        <div class="form-group">
+                            <label>🎞️ Interpolar la salida (FILM) <span class="info-tip" data-tip="Encadena la sección Suavizar: multiplica los frames del video ya reimaginado. 0/1 = sin interpolar.">i</span></label>
+                            <select id="v2vFilmMultiplier">
+                                <option value="0" selected>Sin interpolar</option>
+                                <option value="2">×2</option>
+                                <option value="4">×4</option>
+                            </select>
+                        </div>
+
+                        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0;">
+                            <button type="button" class="config-button" id="v2vBtn" onclick="video2video()">🎬 Reimaginar video</button>
+                        </div>
+                        <small id="v2vStatus" style="display:block;margin-top:6px;"></small>
+                        <div style="margin-top:10px;">
+                            <img id="v2vPreviewImg" style="display:none;max-width:100%;border-radius:8px;border:1px solid var(--border);">
+                            <video id="v2vResult" controls style="display:none;max-width:100%;border-radius:8px;border:1px solid var(--border);"></video>
+                            <a id="v2vDownload" style="display:none;margin-top:6px;" class="config-button" download>⬇️ Descargar</a>
+                        </div>
+                    </div>
+
                     <!-- 📷 IMAGEN DE PARTIDA (opcional) — antes "Guiar". Subís UNA imagen y elegís qué hacer con ella. -->
-                    <div class="param-section gen-flow" id="sec-cn" data-modes="diplo diplocolab">
-                        <h4><span class="section-icon">📷</span> ¿Partís de una imagen? <span style="font-size:12px;color:var(--text-faint);font-weight:400;">(opcional)</span></h4>
+                    <div class="param-section gen-flow collapsible collapsed" id="sec-cn" data-modes="diplo diplocolab">
+                        <h4 onclick="toggleSection(this)"><span class="section-icon">📷</span> ¿Partís de una imagen? <span style="font-size:12px;color:var(--text-faint);font-weight:400;">(opcional)</span></h4>
                         <p class="section-desc">Subí una imagen (una sola) y, abajo, elegí <b>qué hacer con ella</b>. Hay tres formas distintas:<br>
                         🔎 <b>Describirla</b> (te arma el prompt, abajo)<br>
                         🖼️ <b>Usarla de base</b> (img2img: variás/mejorás ESA imagen)<br>
@@ -839,7 +1002,7 @@
                         <!-- 🎯/🖼️ Dos acciones excluyentes para la imagen subida (cada una con su propia explicación) -->
                         <div data-modes="diplocolab" id="img2imgRow">
                             <label style="display:flex;align-items:center;gap:8px;margin:6px 0;font-weight:600;cursor:pointer;">
-                                <input type="checkbox" id="useControlnet" checked style="width:auto;"> 🎯 Copiar su estructura <b>(ControlNet)</b>
+                                <input type="checkbox" id="useControlnet" style="width:auto;"> 🎯 Copiar su estructura <b>(ControlNet)</b>
                                 <span class="info-tip" data-tip="La imagen NO aparece en el resultado: se le extrae la ESTRUCTURA (bordes, pose o profundidad, con el preprocesador de abajo) y la imagen nueva la respeta. Tu prompt define el contenido; la foto define la forma. Ej: tu personaje en la pose exacta de la foto, o el contorno de un edificio. Fuerza con 'ControlNet strength'.">i</span>
                             </label>
                             <label style="display:flex;align-items:center;gap:8px;margin:6px 0;font-weight:600;cursor:pointer;">
@@ -928,6 +1091,14 @@
                             </div>
                         </div>
                         <div class="demo">💡 <b>Probá esto:</b> <button type="button" onclick="demo('loraStrengthModel',1.5,'loraStrengthModelVal')">subí la fuerza a 1.5</button> y vas a ver cómo el personaje se "fríe". La zona buena es 0.7–0.9.</div>
+
+                        <!-- 🌶️ LoRA-stack "especiero" (Clase 5): mezclar varios LoRAs a la vez -->
+                        <div class="form-group" style="background:var(--bg-soft, #f6f6f6);border-radius:8px;padding:10px;margin-top:10px;">
+                            <label style="font-weight:600;">🌶️ Especiero: mezclar varios LoRAs <span class="info-tip" data-tip="De la Clase 5: en vez de un solo LoRA, encadenar varios a strengths BAJAS (5-20%) para mezclar estilos — ej. hiperrealismo + un toque de otro artista + grano. El LoRA de arriba (Usar LoRA) cuenta como el primero de la mezcla.">i</span></label>
+                            <div id="loraStackExtra" style="margin-top:8px;"></div>
+                            <button type="button" class="config-button" onclick="addLoraStackRow()" style="margin-top:4px;">➕ Agregar otro LoRA</button>
+                        </div>
+
                         <!-- Agregar LoRA por URL -->
                         <div class="file-upload-box" style="text-align:left;margin-top:8px;">
                             <label style="font-weight:600;font-size:var(--fs-sm);color:var(--text);">➕ Agregar un LoRA por link <span class="info-tip" data-tip="Pegá el link de descarga directa (.safetensors). De Civitai: botón derecho en 'Download' → Copiar enlace (incluye tu token). Se baja al Colab y aparece en el desplegable.">i</span></label>
@@ -970,6 +1141,30 @@
                     </div>
 
                     <!-- 2. KSampler — acordeón secundario "Ajustes avanzados" -->
+                    <div class="param-section gen-flow collapsible collapsed" id="sec-quality" data-modes="diplocolab diplo">
+                        <h4 onclick="toggleSection(this)"><span class="section-icon">🎨</span> Calidad de imagen</h4>
+                        <p class="section-desc">De la Clase 5: <b>Turbo</b> es rápida (8 steps, CFG clavado en 1). <b>Base</b> es más consistente y sirve para edición fina — más steps, CFG libre. <b>Mixta</b> es la receta del profe: Turbo le da forma → Base le da cuerpo → Turbo remata, todo encadenado en el mismo latente. Base/Mixta necesitan el checkpoint Z-Image Base bajado en el Colab (12.3GB bf16 — correlo en L4, en T4 va muy justo o no entra). <b>Mixta carga Turbo Y Base a la vez</b> (más VRAM que Base sola) — probá primero "Consistente (Base)" antes de "Mixta".</p>
+                        <div class="form-group">
+                            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                                <label style="display:flex;align-items:center;gap:6px;font-size:var(--fs-sm);cursor:pointer;border:1px solid var(--border);border-radius:8px;padding:6px 10px;">
+                                    <input type="radio" name="qualityPick" value="turbo" checked style="width:auto;" onchange="onQualityChange()"> ⚡ Rápida (Turbo)
+                                </label>
+                                <label style="display:flex;align-items:center;gap:6px;font-size:var(--fs-sm);cursor:pointer;border:1px solid var(--border);border-radius:8px;padding:6px 10px;">
+                                    <input type="radio" name="qualityPick" value="mixta" style="width:auto;" onchange="onQualityChange()"> 🥣 Mixta (receta del profe)
+                                </label>
+                                <label style="display:flex;align-items:center;gap:6px;font-size:var(--fs-sm);cursor:pointer;border:1px solid var(--border);border-radius:8px;padding:6px 10px;">
+                                    <input type="radio" name="qualityPick" value="base" style="width:auto;" onchange="onQualityChange()"> 🎯 Consistente (Base)
+                                </label>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label style="display:flex;align-items:center;gap:6px;font-weight:400;cursor:pointer;">
+                                <input type="checkbox" id="useRefine" style="width:auto;">
+                                ✨ Refinar (2º pase, denoise bajo) <span class="info-tip" data-tip="Un pase extra de KSampler con denoise 0.2-0.3 sobre el resultado, sin volver a decodificar. Mejora el detalle general — funciona con cualquier calidad.">i</span>
+                            </label>
+                        </div>
+                    </div>
+
                     <div class="param-section gen-flow collapsible collapsed" id="sec-ksampler" data-modes="diplocolab diplo">
                         <h4 onclick="toggleSection(this)"><span class="section-icon">⚙️</span> Ajustes avanzados (KSampler)</h4>
                         <p class="section-desc">El corazón del proceso: convierte el texto en imagen muestreando ruido. <b>Steps</b> = cuántas iteraciones (Z-Image Turbo va con ~8). <b>CFG</b> = qué tanto obedece el prompt (Turbo usa 1; +1 quema). <b>Sampler/Scheduler</b> = el algoritmo (euler/simple es seguro). Los dropdowns se llenan solos con lo que tiene el backend. Con los defaults ya sale bien.</p>
@@ -1219,6 +1414,7 @@
                 <button class="guide-tab" data-gtab="params" onclick="switchGuideTab('params')">Parámetros</button>
                 <button class="guide-tab" data-gtab="lora" onclick="switchGuideTab('lora')">LoRA</button>
                 <button class="guide-tab" data-gtab="cn" onclick="switchGuideTab('cn')">Qué es ControlNet</button>
+                <button class="guide-tab" data-gtab="video" onclick="switchGuideTab('video')">Video</button>
             </div>
             <div class="modal-body">
                 <!-- Pestaña Preprocesadores: la dibuja preproc.js (renderPreprocGuide) -->
@@ -1259,6 +1455,19 @@
                     <h4>Dos cosas que confunden</h4>
                     <p>· El <b>ControlNet strength</b> NO cambia la vista previa — solo se nota en el resultado final. La preview cambia con el <i>preprocesador</i>, los <i>thresholds</i> y la <i>resolución</i>.<br>· El cartel <b>[experimental]</b> asusta pero anda. Para los tipos de preprocesador, mirá la pestaña <b>Preprocesadores</b>.</p>
                 </div>
+
+                <!-- Pestaña Video (Clase 5): generar vs interpolar vs reimaginar -->
+                <div class="guide-pane" id="gpane-video">
+                    <p>Tres herramientas de video distintas, todas en la sección 🎬 <b>Video</b> (solo visible con la intención "Video"):</p>
+                    <h4>🎬 Generar (Wan 2.2)</h4>
+                    <p>Crea un video <b>desde cero</b> a partir de un prompt de texto, o animando una imagen de partida. Corre local en tu Colab con el modelo abierto Wan 2.2 TI2V-5B — sin costo por clip.</p>
+                    <h4>🎞️ Suavizar / Slow motion (FILM VFI)</h4>
+                    <p>Le mostraron esto en la Clase 5: <b>"FILM es el upscaler del tiempo"</b> — en vez de inventar píxeles, inventa <b>frames intermedios</b>. Sirve para CUALQUIER video (uno que generaste acá o uno que subas), sin volver a generar nada. <b>×2/×4/×6</b> = cuántos frames nuevos mete entre cada par de frames originales.</p>
+                    <div class="qa"><b>Dos formas de usarlo:</b> "más fluido" sube el fps final (mismo video, movimiento más suave) — "cámara lenta" deja el fps igual (el video queda más largo, se ve en slow motion).</div>
+                    <h4>🎬 Reimaginar un video (vid2vid, estilo Octavio)</h4>
+                    <p>Lo mostró un compañero en la Clase 5 y fue el hit de la clase. Toma un video YA EXISTENTE y lo re-dibuja frame por frame con el motor de imagen (Z-Image), combinando <b>profundidad (ControlNet) + variación (img2img) al mismo tiempo</b> — de ahí sale la consistencia entre frames, no de fijar la seed. El resultado es un "stop motion con IA" que sigue el movimiento original pero con otro estilo/contenido.</p>
+                    <div class="qa"><b>Denoise:</b> 0.14 = fiel al video original (casi no cambia) ↔ 0.45 = "se va de mambo" (cambia mucho, puede perder consistencia). <b>Truco de una alumna:</b> probá con <i>1 solo frame</i> primero — te muestra el resultado como imagen suelta antes de gastar tiempo/créditos en el video completo.</div>
+                </div>
             </div>
         </div>
     </div>
@@ -1276,6 +1485,7 @@
     <script src="js/restore.js"></script>
     <script src="js/video.js"></script>
     <script src="js/video-wan.js"></script>
+    <script src="js/video-tools.js"></script>
     <script src="js/fase3.js"></script>
     <script src="js/i18n.js"></script>
 </body>

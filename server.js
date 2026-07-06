@@ -10,6 +10,7 @@ const bodyParser = require('body-parser');
 const socketIO = require('socket.io');
 const { URL } = require('url');
 const { buildZip } = require('./zipper');
+const { buildInterpolateWorkflow, buildWanPostSmooth, buildVideo2VideoWorkflow } = require('./video-workflows');
 
 const clientId = uuidv4();
 const configPath = path.join(__dirname, 'config.json');
@@ -262,7 +263,14 @@ const PUBLIC_URL = process.env.PUBLIC_URL || '';
 const IMAGE_BASE_URL = process.env.IMAGE_BASE_URL || process.env.PUBLIC_URL || 'http://localhost:8085';
 
 app.use(BASE_PATH, express.static(path.join(__dirname, 'public')));
-app.use(bodyParser.json({ limit: '30mb' })); // 30mb para subir imágenes de referencia en base64
+// 30mb default (imágenes de referencia en base64); 200mb SOLO en /api/upload-video
+// (clips de video pesan más) — límite por-ruta, no global, para no aflojar el resto.
+const jsonParser30mb = bodyParser.json({ limit: '30mb' });
+const jsonParser200mb = bodyParser.json({ limit: '200mb' });
+app.use((req, res, next) => {
+    const isVideoUpload = req.path === (BASE_PATH + '/api/upload-video');
+    (isVideoUpload ? jsonParser200mb : jsonParser30mb)(req, res, next);
+});
 
 const port = 8085;
 const server = http.createServer(app);
@@ -464,6 +472,101 @@ app.post(BASE_PATH + '/api/upload-image', async (req, res) => {
     }
 });
 
+// Sube un VIDEO (base64) al Colab para usarlo como entrada de VHS_LoadVideo. Espejo
+// de /api/upload-image pero con el límite de 200mb (ver bodyParser por-ruta arriba).
+app.post(BASE_PATH + '/api/upload-video', async (req, res) => {
+    try {
+        const { filename, dataUrl } = req.body || {};
+        if (!dataUrl) return res.json({ success: false, error: 'falta dataUrl' });
+        const m = /^data:.+?;base64,(.*)$/.exec(dataUrl);
+        const b64 = m ? m[1] : dataUrl;
+        const safe = (filename || `video_${Date.now()}.mp4`).replace(/[^\w.\-]/g, '_');
+        const tmp = path.join(__dirname, 'public', 'imagenes', '_upload_' + safe);
+        fs.writeFileSync(tmp, Buffer.from(b64, 'base64'));
+        const result = await uploadFile(tmp, safe, 'video/mp4');
+        console.log(`📤 [upload-video] subido a ComfyUI: ${result && result.name}`);
+        res.json({ success: true, name: result.name, subfolder: result.subfolder || '', info: result });
+    } catch (e) {
+        console.error('[upload-video] error:', e.message);
+        res.json({ success: false, error: e.message });
+    }
+});
+
+// Pre-chequeo genérico: valida que 'need' esté en /object_info antes de encolar. El
+// class_type "FILM VFI" (con espacio) es literal según el pack de la Clase 5 —
+// ⚠️ si el Colab lo expone con otro nombre, este chequeo lo va a decir clarito.
+async function checkNodesOrError(need) {
+    const oi = await fetchObjectInfo().catch(() => null);
+    if (!oi) return null; // no se pudo consultar (Colab caído) -> dejamos que falle más adelante con su propio error
+    const missing = need.filter(n => !oi[n]);
+    if (missing.length) {
+        return `Faltan nodos en el Colab: ${missing.join(', ')}. Reiniciá el Colab con el notebook actualizado ` +
+            `(celda de VideoHelperSuite/Frame-Interpolation corrida) y reconectá la URL.`;
+    }
+    return null;
+}
+
+// 🎞️ Suavizar / Slow motion (FILM VFI). Sube (si hace falta) y corre VHS_LoadVideo →
+// FILM VFI → CreateVideo → SaveVideo. "Probar 1 frame" no aplica acá (FILM necesita
+// al menos 2 frames para interpolar entre medio).
+app.post(BASE_PATH + '/api/interpolate-video', async (req, res) => {
+    try {
+        const { filename, multiplier, mode, sourceFps } = req.body || {};
+        if (!filename) return res.json({ success: false, error: 'falta filename (subí un video primero)' });
+
+        let built;
+        try {
+            built = buildInterpolateWorkflow({ filename, multiplier, mode, sourceFps });
+        } catch (e) {
+            return res.json({ success: false, error: e.message });
+        }
+
+        const errMsg = await checkNodesOrError(built.requiredNodes);
+        if (errMsg) return res.json({ success: false, error: errMsg });
+
+        console.log(`🎞️ [interpolate-video] ${filename} | ×${multiplier || 2} modo=${mode || 'fluid'}`);
+        const out = await queuePollDownload(built.workflow, built.saveNodeId, 240);
+        res.json({ success: true, url: out.url, filename: out.filename });
+    } catch (e) {
+        console.error('[interpolate-video] error:', e.message);
+        res.json({ success: false, error: e.message });
+    }
+});
+
+// 🎬 Reimaginar un video (vid2vid estilo Octavio). Con frameLoadCap===1 devuelve
+// isPreviewFrame:true y una IMAGEN sola (truco "probar 1 frame primero" antes de
+// quemar créditos en el video completo).
+app.post(BASE_PATH + '/api/video2video', async (req, res) => {
+    try {
+        const body = req.body || {};
+        const { filename, prompt, negative_prompt, denoise, frame_load_cap, force_rate,
+            steps, cfg, seed, controlnet_strength, preprocessor, film_multiplier } = body;
+        if (!filename) return res.json({ success: false, error: 'falta filename (subí un video primero)' });
+        if (!prompt || !String(prompt).trim()) return res.json({ success: false, error: 'falta el prompt' });
+
+        let built;
+        try {
+            built = buildVideo2VideoWorkflow({
+                filename, prompt, negativePrompt: negative_prompt, denoise, frameLoadCap: frame_load_cap,
+                forceRate: force_rate, steps, cfg, seed, controlnetStrength: controlnet_strength,
+                preprocessor, filmMultiplier: film_multiplier
+            });
+        } catch (e) {
+            return res.json({ success: false, error: e.message });
+        }
+
+        const errMsg = await checkNodesOrError(built.requiredNodes);
+        if (errMsg) return res.json({ success: false, error: errMsg });
+
+        console.log(`🎬 [video2video] ${filename} | denoise=${denoise} frames=${frame_load_cap || 'todos'} preview=${built.isPreviewFrame}`);
+        const out = await queuePollDownload(built.workflow, built.saveNodeId, 300);
+        res.json({ success: true, url: out.url, filename: out.filename, isPreviewFrame: !!built.isPreviewFrame });
+    } catch (e) {
+        console.error('[video2video] error:', e.message);
+        res.json({ success: false, error: e.message });
+    }
+});
+
 // Agrega un LoRA al Colab descargándolo por URL. Usa el mini-endpoint /leo/add_lora
 // del custom node leo_lora_fetch que instala nuestro notebook. Devuelve el nombre guardado.
 app.post(BASE_PATH + '/api/add-lora', async (req, res) => {
@@ -553,49 +656,85 @@ function setPreprocessorNode(wf, nodeId, opts) {
 // el prompt generado. Requiere que el Colab tenga instalado el nodo (notebook actualizado).
 // OJO: esquema del nodo tomado de la doc — verificar/ajustar contra object_info la 1ª corrida.
 const QWEN_LLM_DIR = '/content/drive/MyDrive/ComfyUI-Leo/models/LLM';
+
+// Arma el grafo SimpleQwenVLgguf (1 imagen) + PreviewAny sink, lo encola y devuelve el
+// texto. Extraído de /api/describe-image para reusarlo también en el prompt de
+// transición de video (2 llamadas, una por frame — ver /api/video-transition-prompt).
+async function describeImageWithQwen(image, systemPrompt, userPrompt) {
+    const wf = {
+        "1": { inputs: { image }, class_type: "LoadImage", _meta: { title: "describe src" } },
+        "2": {
+            // Inputs EXACTOS del nodo SimpleQwenVLgguf (verificados via object_info, 2026-06-29).
+            // El modelo se pasa por ruta de archivo (model_path/mmproj_path), no por dropdown.
+            inputs: {
+                image: ["1", 0],
+                system_prompt: systemPrompt || "You are a precise vision assistant. Describe the image as a detailed text-to-image prompt.",
+                user_prompt: userPrompt || "Describe this image as a detailed, comma-separated prompt for an image generator. Be specific about subject, style, colors, lighting and composition.",
+                model_path: `${QWEN_LLM_DIR}/Qwen3VL-8B-Instruct-Q4_K_M.gguf`,
+                mmproj_path: `${QWEN_LLM_DIR}/mmproj-Qwen3VL-8B-Instruct-Q8_0.gguf`,
+                output_max_tokens: 512,
+                image_max_tokens: 4096,
+                ctx: 8192,
+                n_batch: 512,
+                gpu_layers: -1,
+                temperature: 0.7,
+                seed: Math.floor(Math.random() * 1e15) + 1,
+                unload_all_models: true,   // libera VRAM (8B comparte la L4 con Z-Image)
+                top_p: 0.92,
+                repeat_penalty: 1.2,
+                top_k: 0,
+                pool_size: 4194304
+            },
+            class_type: "SimpleQwenVLgguf",
+            _meta: { title: "Qwen3-VL describe" }
+        },
+        // Sink: ComfyUI no ejecuta el grafo sin un nodo de salida. PreviewAny consume el
+        // texto y lo expone en /history (outputs[3].text). Verificado en vivo 2026-06-29.
+        "3": { inputs: { source: ["2", 0] }, class_type: "PreviewAny", _meta: { title: "describe out" } }
+    };
+    const promptId = await queuePrompt(wf);
+    const text = await pollHistoryForText(promptId, "3");
+    if (!text) throw new Error('el nodo no devolvió texto (¿está instalado SimpleQwenVLgguf? reiniciá el Colab con el notebook actualizado)');
+    return text;
+}
+
 app.post(BASE_PATH + '/api/describe-image', async (req, res) => {
     try {
         const { image, user_prompt, system_prompt } = req.body || {};
         if (!image) return res.json({ success: false, error: 'falta image (subí una referencia primero)' });
-        const wf = {
-            "1": { inputs: { image }, class_type: "LoadImage", _meta: { title: "describe src" } },
-            "2": {
-                // Inputs EXACTOS del nodo SimpleQwenVLgguf (verificados via object_info, 2026-06-29).
-                // El modelo se pasa por ruta de archivo (model_path/mmproj_path), no por dropdown.
-                inputs: {
-                    image: ["1", 0],
-                    system_prompt: system_prompt || "You are a precise vision assistant. Describe the image as a detailed text-to-image prompt.",
-                    user_prompt: user_prompt || "Describe this image as a detailed, comma-separated prompt for an image generator. Be specific about subject, style, colors, lighting and composition.",
-                    model_path: `${QWEN_LLM_DIR}/Qwen3VL-8B-Instruct-Q4_K_M.gguf`,
-                    mmproj_path: `${QWEN_LLM_DIR}/mmproj-Qwen3VL-8B-Instruct-Q8_0.gguf`,
-                    output_max_tokens: 512,
-                    image_max_tokens: 4096,
-                    ctx: 8192,
-                    n_batch: 512,
-                    gpu_layers: -1,
-                    temperature: 0.7,
-                    seed: Math.floor(Math.random() * 1e15) + 1,
-                    unload_all_models: true,   // libera VRAM (8B comparte la L4 con Z-Image)
-                    top_p: 0.92,
-                    repeat_penalty: 1.2,
-                    top_k: 0,
-                    pool_size: 4194304
-                },
-                class_type: "SimpleQwenVLgguf",
-                _meta: { title: "Qwen3-VL describe" }
-            },
-            // Sink: ComfyUI no ejecuta el grafo sin un nodo de salida. PreviewAny consume el
-            // texto y lo expone en /history (outputs[3].text). Verificado en vivo 2026-06-29.
-            "3": { inputs: { source: ["2", 0] }, class_type: "PreviewAny", _meta: { title: "describe out" } }
-        };
         console.log(`🔎 [describe-image] Qwen3-VL sobre ${image}`);
-        const promptId = await queuePrompt(wf);
-        // Polea /history y extrae el texto de la salida del nodo (defensivo: busca cualquier string)
-        const text = await pollHistoryForText(promptId, "3");
-        if (!text) return res.json({ success: false, error: 'el nodo no devolvió texto (¿está instalado SimpleQwenVLgguf? reiniciá el Colab con el notebook actualizado)' });
+        const text = await describeImageWithQwen(image, system_prompt, user_prompt);
         res.json({ success: true, prompt: text });
     } catch (e) {
         console.error('[describe-image] error:', e.message);
+        res.json({ success: false, error: e.message });
+    }
+});
+
+// 🤖 Prompt de transición para video (Clase 5, backlog #9): "le dan frame inicial+final
+// y GENERA el prompt del entremedio". SimpleQwenVLgguf solo acepta 1 imagen por llamada
+// (confirmado en object_info) — en vez de inventar una capacidad multi-imagen no
+// verificada, describimos cada frame por separado (reusando el mismo nodo ya probado
+// en vivo) y componemos la transición EN TEXTO acá, con un system_prompt que le pide al
+// modelo enfocarse en describir ese frame como punto de partida/llegada de un movimiento.
+app.post(BASE_PATH + '/api/video-transition-prompt', async (req, res) => {
+    try {
+        const { frame_start, frame_end, hint } = req.body || {};
+        if (!frame_start || !frame_end) {
+            return res.json({ success: false, error: 'faltan frame_start y frame_end (subí las 2 imágenes primero)' });
+        }
+        const sysStart = "You are describing the FIRST frame of a short video clip for a text-to-video prompt. Be specific about subject, pose, environment and lighting. No camera jargon, plain descriptive prose.";
+        const sysEnd = "You are describing the LAST frame of a short video clip for a text-to-video prompt. Be specific about subject, pose, environment and lighting. No camera jargon, plain descriptive prose.";
+        console.log(`🤖 [video-transition-prompt] describiendo start=${frame_start} end=${frame_end}`);
+        const [startDesc, endDesc] = await Promise.all([
+            describeImageWithQwen(frame_start, sysStart),
+            describeImageWithQwen(frame_end, sysEnd)
+        ]);
+        const hintPart = (hint && String(hint).trim()) ? `, ${String(hint).trim()}` : '';
+        const prompt = `${startDesc.replace(/\.$/, '')}, gradually and smoothly transitioning to ${endDesc.replace(/\.$/, '')}, continuous fluid motion, no jump cuts, no blur${hintPart}`;
+        res.json({ success: true, prompt, start_description: startDesc, end_description: endDesc });
+    } catch (e) {
+        console.error('[video-transition-prompt] error:', e.message);
         res.json({ success: false, error: e.message });
     }
 });
@@ -644,8 +783,12 @@ const QWEN_EDIT_VAE  = 'qwen_image_vae.safetensors';
 const QWEN_EDIT_LIGHTNING_LORA = 'Qwen-Image-Lightning-4steps-V1.0.safetensors';
 app.post(BASE_PATH + '/api/edit-image', async (req, res) => {
     try {
-        const { image, instruction, negative, steps, cfg, seed, fast } = req.body || {};
+        const { image, instruction, negative, steps, cfg, seed, fast, refImages } = req.body || {};
         if (!image) return res.json({ success: false, error: 'falta image (subí la imagen a editar)' });
+        // refImages: hasta 2 imágenes YA subidas al Colab, opcionales — se pasan como
+        // image2/image3 de TextEncodeQwenImageEditPlus (identidad/textura), NO afectan
+        // el tamaño de salida (eso lo sigue definiendo `image`, vía VAEEncode nodo 9).
+        const extraRefs = Array.isArray(refImages) ? refImages.filter(Boolean).slice(0, 2) : [];
         if (!instruction || !String(instruction).trim())
             return res.json({ success: false, error: 'falta la instrucción de edición (ej. "ponele pelo azul")' });
 
@@ -694,8 +837,19 @@ app.post(BASE_PATH + '/api/edit-image', async (req, res) => {
             wf["6"] = { inputs: { model: ["3", 0], lora_name: QWEN_EDIT_LIGHTNING_LORA, strength_model: 1.0 },
                         class_type: "LoraLoaderModelOnly", _meta: { title: "lightning 4step" } };
         }
+        // Referencias extra (identidad/textura): cada una LoadImage + escala 1MP propia,
+        // conectadas como image2/image3 de AMBOS TextEncodeQwenImageEditPlus (pos y neg).
+        extraRefs.forEach((refName, idx) => {
+            const slot = idx === 0 ? "image2" : "image3";
+            const loadId = `20${idx}`, scaleId = `21${idx}`;
+            wf[loadId] = { inputs: { image: refName }, class_type: "LoadImage", _meta: { title: `ref ${slot}` } };
+            wf[scaleId] = { inputs: { image: [loadId, 0], upscale_method: "nearest-exact", megapixels: 1.0, resolution_steps: 1 },
+                             class_type: "ImageScaleToTotalPixels", _meta: { title: `scale ${slot}` } };
+            wf["7"].inputs[slot] = [scaleId, 0];
+            wf["8"].inputs[slot] = [scaleId, 0];
+        });
 
-        console.log(`✏️ [edit-image] Qwen-Image-Edit sobre ${image} | "${String(instruction).slice(0, 60)}" | fast=${useFast} steps=${realSteps} cfg=${realCfg}`);
+        console.log(`✏️ [edit-image] Qwen-Image-Edit sobre ${image} (+${extraRefs.length} ref) | "${String(instruction).slice(0, 60)}" | fast=${useFast} steps=${realSteps} cfg=${realCfg}`);
         const out = await queuePollDownload(wf, "15", 240); // ~12 min: la 1ª carga del modelo de edit es lenta
         res.json({ success: true, url: out.url, filename: out.filename });
     } catch (e) {
@@ -838,7 +992,9 @@ app.post(BASE_PATH + '/api/generate-video-wan', async (req, res) => {
             length = 81,
             steps = 20,
             cfg = 5.0,
-            seed
+            seed,
+            smooth = false,        // ✨ post-proceso: FILM VFI ×2 antes de armar el video
+            smooth_multiplier = 2
         } = body;
 
         if (!prompt || !String(prompt).trim()) {
@@ -861,9 +1017,10 @@ app.post(BASE_PATH + '/api/generate-video-wan', async (req, res) => {
         if (oi) {
             const need = ["UnetLoaderGGUF", "CLIPLoader", "VAELoader", "CLIPTextEncode",
                 "WanImageToVideo", "KSamplerAdvanced", "VAEDecode", "CreateVideo", "SaveVideo"];
+            if (smooth) need.push("FILM VFI");
             const missing = need.filter(n => !oi[n]);
             if (missing.length) return res.json({ success: false,
-                error: `Faltan nodos en el Colab: ${missing.join(", ")}. Reiniciá el Colab con el notebook actualizado (celda de Wan 2.2 corrida).` });
+                error: `Faltan nodos en el Colab: ${missing.join(", ")}. Reiniciá el Colab con el notebook actualizado (celda de Wan 2.2${smooth ? '/Frame-Interpolation' : ''} corrida).` });
         }
 
         const wf = {
@@ -888,8 +1045,11 @@ app.post(BASE_PATH + '/api/generate-video-wan', async (req, res) => {
             wf["6"].inputs.start_image = ["11", 0];
             wf["11"] = { inputs: { image }, class_type: "LoadImage", _meta: { title: "wan start image" } };
         }
+        if (smooth) {
+            buildWanPostSmooth(wf, { decodeNodeId: "8", combineNodeId: "9", multiplier: Number(smooth_multiplier) || 2 });
+        }
 
-        console.log(`🎬 [generate-video-wan] mode=${mode} | ${w}x${h} len=${len} steps=${realSteps} cfg=${realCfg} | "${String(prompt).slice(0, 60)}"`);
+        console.log(`🎬 [generate-video-wan] mode=${mode} | ${w}x${h} len=${len} steps=${realSteps} cfg=${realCfg} smooth=${smooth} | "${String(prompt).slice(0, 60)}"`);
         // Video local: sin llamada a API externa, pero la 1ª carga del modelo (~5-6GB
         // GGUF + text encoder) puede tardar; timeout generoso como en edit-image.
         const out = await queuePollDownload(wf, "10", 240);
@@ -1051,7 +1211,7 @@ function listGeneratedImages() {
     let names = [];
     try { names = fs.readdirSync(dir); } catch (e) { return []; }
     return names
-        .filter(n => /\.(png|jpe?g|webp)$/i.test(n))
+        .filter(n => /\.(png|jpe?g|webp|mp4|webm)$/i.test(n))   // incluye video (FILM/vid2vid/Wan)
         .filter(n => !/^preprocess_preview/i.test(n))   // excluye los mapas del preprocesador
         .filter(n => {
             try { return fs.statSync(path.join(dir, n)).isFile(); } catch (e) { return false; }
@@ -1158,6 +1318,33 @@ function setIn(wf, id, key, val) {
     if (wf[id] && wf[id].inputs) wf[id].inputs[key] = val;
 }
 
+// LoRA-stack "especiero" (Clase 5): encadena N LoraLoader, cada uno parcheando el
+// model/clip que le pasa el anterior. Con loras=[] no agrega nodos y devuelve
+// modelSrc/clipSrc intactos (grafo sin LoRA queda idéntico a hoy). idPrefix evita
+// colisión de node ids cuando se aplica el mismo stack sobre más de un loader
+// (ej. Turbo=16 y, con calidad Base/Mixta, también sobre el loader Base=91).
+function applyLoraStack(wf, loras, modelSrc, clipSrc, idPrefix) {
+    let modelOut = modelSrc, clipOut = clipSrc;
+    (loras || []).forEach((l, i) => {
+        if (!l || !l.name) return;
+        const nodeId = `${idPrefix}${i}`;
+        wf[nodeId] = {
+            inputs: {
+                lora_name: l.name,
+                strength_model: l.strength_model ?? 0.8,
+                strength_clip: l.strength_clip ?? 1.0,
+                model: modelOut,
+                clip: clipOut
+            },
+            class_type: "LoraLoader",
+            _meta: { title: `LoRA especiero #${i + 1}: ${l.name}` }
+        };
+        modelOut = [nodeId, 0];
+        clipOut = [nodeId, 1];
+    });
+    return [modelOut, clipOut];
+}
+
 // Lista de workflows disponibles con sus parametros
 const WORKFLOWS = {
     simple: {
@@ -1209,13 +1396,20 @@ const WORKFLOWS = {
     }
 };
 
-async function uploadImage(filePath) {
+// Generalización de la vieja uploadImage(filePath): sube CUALQUIER archivo (imagen o
+// video) al mismo endpoint /upload/image de ComfyUI. VHS_LoadVideo usa ese mismo
+// endpoint para sus .mp4 (confirmar contra el Colab vivo; documentado en el plan de
+// la Clase 5). mimeType es opcional, solo ayuda al form-data a declarar el content-type.
+async function uploadFile(filePath, filename, mimeType) {
     const formData = new FormData();
-    formData.append('image', fs.createReadStream(filePath));
+    const opts = {};
+    if (filename) opts.filename = filename;
+    if (mimeType) opts.contentType = mimeType;
+    formData.append('image', fs.createReadStream(filePath), Object.keys(opts).length ? opts : undefined);
 
     const parsedUrl = parseComfyUrl(config.comfyUrl);
     const httpModule = getHttpModule(config.comfyUrl);
-    
+
     const options = {
         hostname: parsedUrl.hostname,
         port: parsedUrl.port,
@@ -1242,6 +1436,7 @@ async function uploadImage(filePath) {
         formData.pipe(req);
     });
 }
+async function uploadImage(filePath) { return uploadFile(filePath); }
 
 // extraData (opcional): se mergea en el POST /prompt como "extra_data". Lo usan los
 // API nodes oficiales de ComfyUI (ej. Seedance 2.0) para recibir la key de comfy.org
@@ -1328,10 +1523,14 @@ async function pollHistoryAndEmit(promptId, ws, outputNode, promptText) {
         const outputs = entry.outputs || {};
 
         // Imagenes del nodo de salida preferido; si no, el primer nodo que tenga.
-        let imgs = (outputs[outputNode] && outputs[outputNode].images) || null;
+        // Los nodos de la suite VHS (VHS_VideoCombine) históricamente emiten bajo la
+        // clave "gifs" en vez de "images" aunque el formato sea MP4 -> fallback defensivo
+        // (anticipado por el plan de la Clase 5, "Plan B" en KNOW_HOW/CLASE5-INVENTARIO...).
+        let imgs = (outputs[outputNode] && (outputs[outputNode].images || outputs[outputNode].gifs)) || null;
         if (!imgs) {
             for (const k of Object.keys(outputs)) {
-                if (outputs[k].images && outputs[k].images.length) { imgs = outputs[k].images; break; }
+                const cand = outputs[k].images || outputs[k].gifs;
+                if (cand && cand.length) { imgs = cand; break; }
             }
         }
 
@@ -1381,8 +1580,9 @@ async function queuePollDownload(wf, outputNode, maxTries = 100, extraData) {
         if (!entry) continue;
         const status = entry.status || {};
         const outputs = entry.outputs || {};
-        let imgs = (outputs[outputNode] && outputs[outputNode].images) || null;
-        if (!imgs) for (const k of Object.keys(outputs)) { if (outputs[k].images && outputs[k].images.length) { imgs = outputs[k].images; break; } }
+        // Fallback .gifs: ver comentario equivalente en pollHistoryAndEmit (VHS_VideoCombine).
+        let imgs = (outputs[outputNode] && (outputs[outputNode].images || outputs[outputNode].gifs)) || null;
+        if (!imgs) for (const k of Object.keys(outputs)) { const cand = outputs[k].images || outputs[k].gifs; if (cand && cand.length) { imgs = cand; break; } }
         if ((status.completed || status.status_str === 'success') && imgs && imgs.length) {
             const image = imgs[imgs.length - 1];
             const parsed = parseComfyUrl(config.comfyUrl);
@@ -1734,26 +1934,21 @@ async function generarImagenDiploColab(promptText, params = {}) {
     setIn(wf, "28", "type", clip_type);
     setIn(wf, "85", "model_name", upscale_model_name);
 
-    // LoRA opcional: si la UI manda use_lora + lora_name, insertamos un LoraLoader
-    // completo (nodo 90) que parchea MODEL (del UNET 16) y CLIP (del CLIPLoader 28).
-    // Reruteamos el clip de los prompts (6/7) al clip parcheado, así strength_clip
-    // surte efecto. Si use_lora está OFF, el grafo queda intacto (model del UNET, clip del 28).
-    if (params.use_lora && params.lora_name) {
-        wf["90"] = {
-            inputs: {
-                lora_name: params.lora_name,
-                strength_model: params.lora_strength_model ?? 0.8,
-                strength_clip: params.lora_strength_clip ?? 1.0,
-                model: ["16", 0],
-                clip: ["28", 0]
-            },
-            class_type: "LoraLoader",
-            _meta: { title: "LoRA (opcional)" }
-        };
-        setIn(wf, "3", "model", ["90", 0]);   // KSampler usa el modelo parcheado
-        setIn(wf, "6", "clip", ["90", 1]);     // prompt + usa el clip parcheado
-        setIn(wf, "7", "clip", ["90", 1]);     // prompt - usa el clip parcheado
-        console.log(`🧩 [DIPLO-COLAB] LoRA: ${params.lora_name} @ model ${params.lora_strength_model ?? 0.8} / clip ${params.lora_strength_clip ?? 1.0}`);
+    // LoRA-stack "especiero" (Clase 5, backlog #7): encadena N LoraLoader, cada uno
+    // parcheando el model/clip del anterior (mismo patrón que rgthree Power Lora
+    // Loader / Easy Lora Stack — mezclar varios a strengths bajas). Retrocompatible:
+    // si no viene params.loras[], usamos el toggle viejo use_lora+lora_name como stack
+    // de 1 elemento (mismo resultado que antes de esta sesión).
+    let loraList = Array.isArray(params.loras) ? params.loras.filter(l => l && l.name) : [];
+    if (!loraList.length && params.use_lora && params.lora_name) {
+        loraList = [{ name: params.lora_name, strength_model: params.lora_strength_model ?? 0.8, strength_clip: params.lora_strength_clip ?? 1.0 }];
+    }
+    const [turboModel, clipOut] = applyLoraStack(wf, loraList, ["16", 0], ["28", 0], "90_");
+    setIn(wf, "3", "model", turboModel);   // KSampler usa el modelo parcheado (o el UNET directo si no hay LoRAs)
+    setIn(wf, "6", "clip", clipOut);        // prompt + usa el clip parcheado
+    setIn(wf, "7", "clip", clipOut);        // prompt - usa el clip parcheado
+    if (loraList.length) {
+        console.log(`🧩 [DIPLO-COLAB] LoRA-stack (${loraList.length}): ${loraList.map(l => `${l.name}@model${l.strength_model ?? 0.8}/clip${l.strength_clip ?? 1.0}`).join(', ')}`);
     }
 
     // img2img opcional: si la UI manda img2img + ref_image, codificamos la imagen subida
@@ -1775,8 +1970,76 @@ async function generarImagenDiploColab(promptText, params = {}) {
         console.log(`🖼️ [DIPLO-COLAB] img2img desde ${params.ref_image} @ denoise ${denoise}`);
     }
 
+    // Calidad de imagen (Clase 5): Turbo (default) | Base (más consistente, CFG variable,
+    // recomendada por el profe para edición fina) | Mixta (receta del profe: Turbo da
+    // forma → Base le da cuerpo → Turbo remata, todo en LATENT sin decodificar entre medio).
+    // Checkpoint Z-Image BASE confirmado 2026-07-06 (listado real de HuggingFace, no
+    // resumen): Comfy-Org/z_image → split_files/diffusion_models/z_image_bf16.safetensors
+    // (12.3GB, bf16 sin cuantizar — weight_dtype "default" carga cualquier precisión sin
+    // forzar cast, la opción segura). El mismo repo confirma que Base reusa el MISMO CLIP
+    // (qwen_3_4b_fp8_mixed.safetensors) y VAE (ae.safetensors) que ya usa Turbo — no hace
+    // falta bajar nada más. Hay una variante int8 más liviana (z_image_int8_convrot.safetensors,
+    // 6.2GB) pero su compatibilidad con UNETLoader estándar no está verificada (nombre de
+    // cuantización no estándar) — se deja como override manual, no como default.
+    const quality = params.quality || 'turbo';
+    let finalSamplerNode = "3"; // qué nodo alimenta finalmente a VAEDecode (92)
+    if (quality !== 'turbo') {
+        const baseUnet = params.unet_name_base || process.env.ZIMAGE_BASE_UNET || 'z_image_bf16.safetensors';
+        wf["91"] = { inputs: { unet_name: baseUnet, weight_dtype: params.weight_dtype_base || "default" },
+            class_type: "UNETLoader", _meta: { title: "UNET Z-Image BASE" } };
+
+        // El LoRA-stack (si hay) se aplica TAMBIÉN sobre el loader Base — si no, un
+        // LoRA activo se perdería en cuanto la calidad deja de ser Turbo.
+        const [baseModel] = applyLoraStack(wf, loraList, ["91", 0], ["28", 0], "91lora_");
+        if (quality === 'base') {
+            // Base sola: mismo KSampler(3) pero con el modelo Base — más steps, CFG
+            // deja de estar clavado en 1 (Turbo SI necesita cfg=1, Base no).
+            setIn(wf, "3", "model", baseModel);
+            setIn(wf, "3", "steps", params.steps ?? 20);
+            setIn(wf, "3", "cfg", params.cfg ?? 4.0);
+            console.log(`🎨 [DIPLO-COLAB] Calidad BASE: steps=${params.steps ?? 20} cfg=${params.cfg ?? 4.0}`);
+        } else if (quality === 'mixta') {
+            wf["93"] = {
+                inputs: {
+                    seed, steps: params.steps_base ?? 20, cfg: params.cfg_base ?? 4.0,
+                    sampler_name, scheduler, denoise: params.denoise_base ?? 0.45,
+                    model: baseModel, positive: ["6", 0], negative: ["7", 0], latent_image: ["3", 0]
+                },
+                class_type: "KSampler", _meta: { title: "KSampler (Base — le da cuerpo)" }
+            };
+            wf["94"] = {
+                inputs: {
+                    seed, steps: params.steps_turbo2 ?? 8, cfg: 1.0,
+                    sampler_name, scheduler, denoise: params.denoise_turbo2 ?? 0.25,
+                    model: turboModel, positive: ["6", 0], negative: ["7", 0], latent_image: ["93", 0]
+                },
+                class_type: "KSampler", _meta: { title: "KSampler (Turbo — remate)" }
+            };
+            finalSamplerNode = "94";
+            console.log(`🎨 [DIPLO-COLAB] Calidad MIXTA: Turbo→Base(denoise ${params.denoise_base ?? 0.45})→Turbo(denoise ${params.denoise_turbo2 ?? 0.25})`);
+        }
+    }
+
+    // Refinar (2º pase latente, denoise bajo, corre siempre con Turbo): opcional,
+    // encadenable con cualquier calidad — mejora detalle general sin re-decodificar.
+    // OJO: usa turboModel (no ["16",0] crudo) para que el LoRA-stack, si está activo,
+    // sobreviva también en este último pase (bug real encontrado en auditoría 2026-07-06).
+    if (params.refine) {
+        wf["95"] = {
+            inputs: {
+                seed, steps: params.steps_refine ?? 8, cfg: 1.0,
+                sampler_name, scheduler, denoise: params.denoise_refine ?? 0.25,
+                model: turboModel, positive: ["6", 0], negative: ["7", 0], latent_image: [finalSamplerNode, 0]
+            },
+            class_type: "KSampler", _meta: { title: "KSampler (Refinar)" }
+        };
+        finalSamplerNode = "95";
+        console.log(`✨ [DIPLO-COLAB] Refinar activado: denoise ${params.denoise_refine ?? 0.25}`);
+    }
+    if (finalSamplerNode !== "3") setIn(wf, "92", "samples", [finalSamplerNode, 0]);
+
     console.log(`🎨 [DIPLO-COLAB] Generando:`, {
-        prompt: promptText.substring(0, 60) + '...', seed, steps, cfg, sampler_name, scheduler, width, height
+        prompt: promptText.substring(0, 60) + '...', seed, steps, cfg, sampler_name, scheduler, width, height, quality, refine: !!params.refine
     });
 
     const promptId = await queuePrompt(wf);
